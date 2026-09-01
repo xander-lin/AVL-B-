@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="620" viewBox="0 0 900 620">
+  <style>
+    text{font-family:"Noto Sans CJK SC",system-ui,sans-serif;fill:#38BDF8;text-anchor:middle;dominant-baseline:middle}
+    .edge{stroke:#38BDF8;stroke-width:3;stroke-linecap:round}.focus-edge{stroke:#38BDF8;stroke-width:7;stroke-linecap:round}
+    .node{fill:none;stroke:#38BDF8;stroke-width:3}.focus-node{stroke-width:7}.detached{stroke-dasharray:8 5}
+    .red-edge{stroke:#38BDF8;stroke-width:4;stroke-linecap:round;stroke-dasharray:8 5}.red-node{fill:none;stroke:#38BDF8;stroke-width:4;stroke-dasharray:8 5}
+    .key{font-size:21px}.bkey{font-size:19px}.empty{font-size:17px}
+  </style>
+  <text class="bkey" x="450" y="90">BST</text><line class="edge" x1="450" y1="120" x2="450" y2="200"/><text class="bkey" x="250" y="260">AVL</text><text class="bkey" x="650" y="260">B tree</text><line class="edge" x1="420" y1="210" x2="280" y2="240"/><line class="edge" x1="480" y1="210" x2="620" y2="240"/><line class="edge" x1="650" y1="290" x2="650" y2="375"/><text class="bkey" x="650" y="435">2-3-4 tree</text><line class="edge" x1="650" y1="465" x2="650" y2="530"/><text class="bkey" x="650" y="580">red-black tree</text>
+</svg>

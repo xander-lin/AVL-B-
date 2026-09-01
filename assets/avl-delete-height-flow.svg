@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1450" height="780" viewBox="0 0 1450 780" role="img" aria-labelledby="title desc">
+  <title id="title">AVL 删除：先删除，再沿来路向上检查</title>
+  <desc id="desc">二叉搜索树决定怎么摘下节点；AVL 逐层判断失衡与高度变化，决定旋转与停止时机。</desc>
+  <defs>
+    <marker id="ag" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#A8E6C3"/>
+    </marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#E5646C"/>
+    </marker>
+    <marker id="ay" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#9AA3AF"/>
+    </marker>
+  </defs>
+  <style>
+    text { font-family: "Noto Sans CJK SC", system-ui, sans-serif; fill: #F8FAFC; }
+  </style>
+  <rect width="1450" height="780" fill="#000000"/>
+  <text x="28" y="54" font-size="40" font-weight="700">AVL 删除：先删除，再沿来路向上检查</text>
+
+  <rect x="24" y="92" width="420" height="568" fill="#0E1319" stroke="#262D38" stroke-width="2"/>
+  <rect x="30" y="112" width="6" height="528" fill="#7EE0A6"/>
+  <text x="56" y="132" font-size="22" fill="#7EE0A6" letter-spacing="2">第一步</text>
+  <text x="56" y="172" font-size="30" font-weight="700">按二叉搜索树规则删除</text>
+  <circle cx="76" cy="214" r="17" fill="#58C98B"/>
+  <text x="76" y="221" font-size="20" font-weight="700" fill="#06281A" text-anchor="middle">0</text>
+  <text x="110" y="222" font-size="27" font-weight="600">0 个孩子</text>
+  <text x="110" y="258" font-size="20" fill="#9AA3AF">叶节点直接摘除，留下空位</text>
+  <line x1="48" y1="288" x2="420" y2="288" stroke="#232A33" stroke-width="1.5"/>
+  <circle cx="76" cy="330" r="17" fill="#58C98B"/>
+  <text x="76" y="337" font-size="20" font-weight="700" fill="#06281A" text-anchor="middle">1</text>
+  <text x="110" y="338" font-size="27" font-weight="600">1 个孩子</text>
+  <text x="110" y="374" font-size="20" fill="#9AA3AF">独子直接接替它的位置</text>
+  <line x1="48" y1="404" x2="420" y2="404" stroke="#232A33" stroke-width="1.5"/>
+  <circle cx="76" cy="446" r="17" fill="#58C98B"/>
+  <text x="76" y="453" font-size="20" font-weight="700" fill="#06281A" text-anchor="middle">2</text>
+  <text x="110" y="454" font-size="27" font-weight="600">2 个孩子</text>
+  <text x="110" y="490" font-size="20" fill="#9AA3AF">后继顶替关键字，再删后继原位</text>
+  <rect x="48" y="524" width="372" height="68" fill="#0F1D16" stroke="#3F7A58" stroke-width="1.6"/>
+  <text x="234" y="566" font-size="23" fill="#7EE0A6" text-anchor="middle">删除完成，从实际删点开始回溯</text>
+
+  <path d="M 452 148 L 792 148" fill="none" stroke="#A8E6C3" stroke-width="3" marker-end="url(#ag)"/>
+
+  <rect x="800" y="92" width="400" height="116" fill="#0D1512" stroke="#3F7A58" stroke-width="2.4"/>
+  <text x="828" y="142" font-size="34" font-weight="700">到达当前层</text>
+  <text x="828" y="182" font-size="22" fill="#9AA3AF">从删点或更高祖先进去</text>
+
+  <path d="M 1160 212 C 1225 242, 1252 262, 1240 296" fill="none" stroke="#A8E6C3" stroke-width="3" marker-end="url(#ag)"/>
+
+  <rect x="1040" y="300" width="390" height="116" fill="#0D1512" stroke="#3F7A58" stroke-width="2.4"/>
+  <text x="1068" y="350" font-size="34" font-weight="700">这一层失衡?</text>
+  <text x="1068" y="390" font-size="22" fill="#9AA3AF">失衡才需要旋转</text>
+
+  <path d="M 1235 420 L 1235 516" fill="none" stroke="#E5646C" stroke-width="3" marker-end="url(#ar)"/>
+  <text x="1256" y="474" font-size="24" fill="#F08A8A">是</text>
+
+  <rect x="1040" y="522" width="390" height="116" fill="#1A0E10" stroke="#B04A50" stroke-width="2.4"/>
+  <text x="1068" y="572" font-size="34" font-weight="700">旋转修复</text>
+  <text x="1068" y="612" font-size="22" fill="#9AA3AF">修复后仍要检查高度</text>
+
+  <path d="M 1032 580 L 928 580" fill="none" stroke="#E5646C" stroke-width="3" marker-end="url(#ar)"/>
+  <text x="980" y="556" font-size="22" fill="#F08A8A" text-anchor="middle">修复后</text>
+
+  <path d="M 1036 386 C 950 424, 852 462, 800 516" fill="none" stroke="#9AA3AF" stroke-width="2.2" marker-end="url(#ay)"/>
+  <text x="915" y="448" font-size="24" fill="#9AA3AF">否</text>
+
+  <rect x="530" y="522" width="390" height="116" fill="#0D1512" stroke="#3F7A58" stroke-width="2.4"/>
+  <text x="558" y="572" font-size="34" font-weight="700">局部高度变小?</text>
+  <text x="558" y="612" font-size="22" fill="#9AA3AF">决定停止，还是继续向上</text>
+
+  <path d="M 725 642 L 725 678" fill="none" stroke="#9AA3AF" stroke-width="2.2" marker-end="url(#ay)"/>
+  <text x="746" y="666" font-size="24" fill="#9AA3AF">否</text>
+  <text x="725" y="714" font-size="30" font-weight="700" text-anchor="middle">出：停止回溯</text>
+  <text x="725" y="750" font-size="22" fill="#9AA3AF" text-anchor="middle">高度不再下降，删除影响到此为止</text>
+
+  <path d="M 528 594 C 452 545, 478 212, 792 172" fill="none" stroke="#A8E6C3" stroke-width="3" marker-end="url(#ag)"/>
+  <text x="548" y="356" font-size="26" font-weight="700" fill="#A8E6C3">是：继续向上</text>
+  <text x="548" y="390" font-size="22" fill="#9AA3AF">到更高祖先，再入下一轮</text>
+</svg>

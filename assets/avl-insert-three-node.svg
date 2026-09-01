@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="450" height="230" viewBox="0 0 450 230">
+  <style>
+    text{font-family:"Noto Sans CJK SC",system-ui,sans-serif;fill:#F8FAFC;text-anchor:middle;dominant-baseline:middle}
+  </style>
+  <line x1="211.4" y1="71.0" x2="153.6" y2="139.0" stroke="#F8FAFC" stroke-width="3.4" stroke-linecap="round"/>
+  <rect x="190.0" y="20.0" width="70.0" height="70.0" rx="15" fill="#A3BCF7" opacity="0.100"/>
+  <rect x="195.0" y="25.0" width="60.0" height="60.0" rx="15" fill="#A3BCF7" opacity="0.160"/>
+  <rect x="198.5" y="28.5" width="53.0" height="53.0" rx="15" fill="#A3BCF7" opacity="0.280"/>
+  <rect x="201.0" y="31.0" width="48.0" height="48.0" rx="15" fill="#A3BCF7" opacity="0.500"/>
+  <rect x="203.0" y="33.0" width="44.0" height="44.0" rx="9" fill="#3B5BA5" stroke="#8FA9E8" stroke-width="1.6"/>
+  <text x="225.0" y="56.0" font-weight="600" font-size="18">2</text>
+  <rect x="105.0" y="120.0" width="70.0" height="70.0" rx="15" fill="#A3BCF7" opacity="0.100"/>
+  <rect x="110.0" y="125.0" width="60.0" height="60.0" rx="15" fill="#A3BCF7" opacity="0.160"/>
+  <rect x="113.5" y="128.5" width="53.0" height="53.0" rx="15" fill="#A3BCF7" opacity="0.280"/>
+  <rect x="116.0" y="131.0" width="48.0" height="48.0" rx="15" fill="#A3BCF7" opacity="0.500"/>
+  <rect x="118.0" y="133.0" width="44.0" height="44.0" rx="9" fill="#3B5BA5" stroke="#8FA9E8" stroke-width="1.6"/>
+  <text x="140.0" y="156.0" font-weight="600" font-size="18">1</text>
+  <rect x="275.0" y="120.0" width="70.0" height="70.0" rx="15" fill="#FFFFFF" opacity="0.100"/>
+  <rect x="280.0" y="125.0" width="60.0" height="60.0" rx="15" fill="#FFFFFF" opacity="0.160"/>
+  <rect x="283.5" y="128.5" width="53.0" height="53.0" rx="15" fill="#FFFFFF" opacity="0.280"/>
+  <rect x="286.0" y="131.0" width="48.0" height="48.0" rx="15" fill="#FFFFFF" opacity="0.500"/>
+  <rect x="288.0" y="133.0" width="44.0" height="44.0" rx="9" fill="#3B5BA5" stroke="#8FA9E8" stroke-width="1.6"/>
+  <text x="310.0" y="156.0" font-weight="600" font-size="18">3</text>
+</svg>
