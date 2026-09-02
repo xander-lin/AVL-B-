@@ -6382,28 +6382,29 @@ def rb_delete_case5_btree() -> None:
             body.append(rb_node(point, key, opacity * blend, red=after))
         return svg("".join(body), width=width, height=height, color=INK)
 
-    # Initial legal red-sibling configuration from the matching red-black clip.
+    # The encoded B-tree member keys are peers on one horizontal row from the
+    # first frame. The lower row contains the child members.
     initial = {
-        "18": (750.0, 130.0),
-        "15": (500.0, 350.0),
-        "27": (1000.0, 350.0),
-        "9": (390.0, 565.0),
-        "17": (610.0, 565.0),
+        "15": (620.0, 170.0),
+        "18": (840.0, 170.0),
+        "9": (420.0, 480.0),
+        "17": (730.0, 480.0),
+        "27": (1060.0, 480.0),
     }
     initial_colors = {"18": False, "15": True, "27": False, "9": False, "17": False}
     first_colors = {"18": True, "15": False, "27": False, "9": False, "17": False}
-    initial_edges = (("18", "15"), ("18", "27"), ("15", "9"), ("15", "17"))
-    rewired_edges = (("18", "15"), ("18", "27"), ("15", "9"), ("18", "17"))
+    initial_edges = (("15", "18"), ("15", "9"), ("15", "17"), ("18", "27"))
+    rewired_edges = (("15", "18"), ("15", "9"), ("18", "17"), ("18", "27"))
 
-    # Once 17 is on 18's side, the B-tree member row is [15, 18, 27].
+    # After 18 is pulled home, [17, 18, 27] is the lower member row.
     row = {
-        "15": (500.0, 350.0),
-        "18": (750.0, 350.0),
-        "27": (1000.0, 350.0),
-        "9": (390.0, 565.0),
-        "17": (750.0, 565.0),
+        "15": (750.0, 130.0),
+        "9": (460.0, 480.0),
+        "17": (680.0, 480.0),
+        "18": (840.0, 480.0),
+        "27": (1000.0, 480.0),
     }
-    row_edges = (("15", "18"), ("18", "27"), ("15", "9"), ("18", "17"))
+    row_edges = (("15", "9"), ("15", "18"), ("18", "17"), ("18", "27"))
     pulled_colors = {"18": False, "15": False, "27": True, "9": False, "17": True}
     frames: list[str] = [scene(initial, initial_colors, initial_edges)] * 30
 
