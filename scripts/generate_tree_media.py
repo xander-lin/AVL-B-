@@ -301,7 +301,7 @@ def binary_frame(
     detached: Iterable[str] = (),
     red_nodes: Iterable[str] = (),
     red_edges: Iterable[Edge] = (),
-    nil_double_black: Point | None = None,
+    nil_double_black: tuple[Point, str] | None = None,
     color: str = "#000",
     width: int = WIDTH,
     height: int = HEIGHT,
@@ -315,8 +315,8 @@ def binary_frame(
         for key, point in positions.items()
     )
     if nil_double_black is not None:
-        x, y = nil_double_black
-        body += f'<circle class="node" cx="{x:.1f}" cy="{y:.1f}" r="{RADIUS:.1f}"/><circle class="node" cx="{x:.1f}" cy="{y:.1f}" r="{RADIUS - 7:.1f}"/><text class="empty" x="{x:.1f}" y="{y:.1f}">NIL</text>'
+        (x, y), label = nil_double_black
+        body += f'<circle class="node" cx="{x:.1f}" cy="{y:.1f}" r="{RADIUS:.1f}"/><circle class="node" cx="{x:.1f}" cy="{y:.1f}" r="{RADIUS - 7:.1f}"/><text class="empty" x="{x:.1f}" y="{y:.1f}">{esc(label)}</text>'
     return svg(body, width=width, height=height, color=color)
 
 
@@ -396,7 +396,7 @@ def tree_frame(
     detached: Iterable[str] = (),
     red_nodes: Iterable[str] = (),
     red_edges: Iterable[Edge] = (),
-    nil_double_black: Point | None = None,
+    nil_double_black: tuple[Point, str] | None = None,
 ) -> str:
     edges = [(parent, child) for parent, (left, right) in children.items() for child in (left, right) if child is not None]
     return binary_frame(
@@ -655,6 +655,46 @@ def btree_order_5_svg() -> str:
         ]
     )
     return svg("".join(body), width=1100, height=600, color=INK)
+
+
+def btree_promotion_parity_svg() -> str:
+    """Show only the final trees after the three requested promotions."""
+    width = 1500
+    height = 520
+    columns = (
+        (250.0, "4 阶：3 个关键字", "20", ["10"], ["30"]),
+        (750.0, "4 阶：4 个关键字", "30", ["10", "20"], ["40"]),
+        (1250.0, "5 阶：5 个关键字", "30", ["10", "20"], ["40", "50"]),
+    )
+    body = [
+        f'<rect x="0" y="0" width="{width}" height="{height}" fill="#000000"/>',
+        f'<text x="750" y="48" fill="{GLOW_WHITE}" font-size="28" font-weight="600" '
+        'text-anchor="middle">推举后的最终状态</text>',
+    ]
+    for x, label, promoted, left_keys, right_keys in columns:
+        parent = (x, 190.0)
+        children = ((x - 115.0, 365.0), (x + 115.0, 365.0))
+        body.append(
+            f'<text x="{x:.1f}" y="100" fill="{GLOW_WHITE}" font-size="24" font-weight="600" '
+            f'text-anchor="middle">{esc(label)}</text>'
+        )
+        body.append(
+            btree_neon_edge(
+                btree_neon_gap(parent, 1, 0),
+                (children[0][0], children[0][1] - BTREE_NEON_CELL_H / 2.0),
+            )
+        )
+        body.append(
+            btree_neon_edge(
+                btree_neon_gap(parent, 1, 1),
+                (children[1][0], children[1][1] - BTREE_NEON_CELL_H / 2.0),
+            )
+        )
+        left_row, _ = btree_neon_row(left_keys, children[0])
+        right_row, _ = btree_neon_row(right_keys, children[1])
+        parent_row, _ = btree_neon_row([promoted], parent, focus=[promoted])
+        body.extend([left_row, right_row, parent_row])
+    return svg("".join(body), width=width, height=height, color=INK)
 
 
 def btree_delete_cases_svg() -> str:
@@ -3870,13 +3910,16 @@ def rb_crossfade_edge(start: Point, end: Point, from_red: bool, to_red: bool, bl
     return rb_edge_fragment(start, end, 1.0 - blend, from_red) + rb_edge_fragment(start, end, blend, to_red)
 
 
-def rb_nil_fragment(center: Point, opacity: float) -> str:
+RB_DEBT_KEY = "__double_black__"
+
+
+def rb_nil_fragment(center: Point, opacity: float, label: str) -> str:
     x, y = center
     return (
         f'<g opacity="{opacity:.3f}">'
         f'<rect fill="none" stroke="{RB_BLACK_INK}" stroke-width="3" x="{x - RB_NODE_W / 2:.1f}" y="{y - RB_NODE_H / 2:.1f}" width="{RB_NODE_W:.1f}" height="{RB_NODE_H:.1f}" rx="4"/>'
         f'<rect fill="none" stroke="{RB_BLACK_INK}" stroke-width="2" x="{x - RB_NODE_W / 2 + 8:.1f}" y="{y - RB_NODE_H / 2 + 6:.1f}" width="{RB_NODE_W - 16:.1f}" height="{RB_NODE_H - 12:.1f}" rx="4"/>'
-        f'<text fill="{RB_BLACK_INK}" font-size="17px" text-anchor="middle" dominant-baseline="middle" font-family="Noto Sans CJK SC,system-ui,sans-serif" x="{x:.1f}" y="{y:.1f}">NIL</text></g>'
+        f'<text fill="{RB_BLACK_INK}" font-size="17px" text-anchor="middle" dominant-baseline="middle" font-family="Noto Sans CJK SC,system-ui,sans-serif" x="{x:.1f}" y="{y:.1f}">{esc(label)}</text></g>'
     )
 
 
@@ -3884,19 +3927,19 @@ def rb_scene(
     nodes: Sequence[tuple[str, Point, float, bool]],
     edges: Sequence[tuple[str, str, float, bool]],
     *,
-    nil: tuple[Point, float] | None = None,
+    nil: tuple[Point, float, str] | None = None,
     width: int = WIDTH,
     height: int = HEIGHT,
 ) -> str:
     """One complete colored red-black frame from (key, position, opacity, red) tuples."""
     positions = {key: point for key, point, _, _ in nodes}
     if nil is not None and nil[1] > 0.0:
-        positions.setdefault("NIL", nil[0])
+        positions.setdefault(RB_DEBT_KEY, nil[0])
     parts = [rb_edge_fragment(positions[a], positions[b], opacity, red) for a, b, opacity, red in edges]
     parts += [rb_node(point, key, opacity, red=red) for key, point, opacity, red in nodes]
     if nil is not None:
-        point, opacity = nil
-        parts.append(rb_nil_fragment(point, opacity))
+        point, opacity, label = nil
+        parts.append(rb_nil_fragment(point, opacity, label))
     return svg("".join(parts), width=width, height=height, color=INK)
 
 
@@ -4855,8 +4898,17 @@ def btree_title_card(text: str, width: int, height: int) -> list[str]:
     return frames
 
 
-def btree_borrow_frames(width: int, height: int, root_c: Point, left_c: Point, right_c: Point, merged_c: Point) -> list[str]:
-    """Animate one continuous merge, deletion, and re-split without split-cell gaps."""
+def btree_borrow_frames(
+    width: int,
+    height: int,
+    root_c: Point,
+    left_c: Point,
+    right_c: Point,
+    merged_c: Point,
+    *,
+    promoted: str = "40",
+) -> list[str]:
+    """Animate leader home, deletion, and one selected legal re-promotion."""
 
     def row(keys: Sequence[str], positions: Sequence[Point]) -> str:
         return btree_neon_row_at_positions(keys, positions)
@@ -4892,9 +4944,15 @@ def btree_borrow_frames(width: int, height: int, root_c: Point, left_c: Point, r
     right_two = cell_slots(right_c, 2)
     merged_six = cell_slots(merged_c, 6)
     merged_five = cell_slots(merged_c, 5)
-    final_left = cell_slots(left_c, 2)
-    final_right = cell_slots(right_c, 2)
     root_one = cell_slots(root_c, 1)[0]
+    remaining_keys = ("20", "30", "40", "60", "70")
+    if promoted not in {"30", "40", "60"}:
+        raise ValueError("case-one promotion must be 30, 40, or 60")
+    promotion_index = remaining_keys.index(promoted)
+    final_left_keys = remaining_keys[:promotion_index]
+    final_right_keys = remaining_keys[promotion_index + 1:]
+    final_left = cell_slots(left_c, len(final_left_keys))
+    final_right = cell_slots(right_c, len(final_right_keys))
     frames: list[str] = []
 
     # Initial tree. Every multi-key node is drawn as one contiguous array.
@@ -4958,9 +5016,10 @@ def btree_borrow_frames(width: int, height: int, root_c: Point, left_c: Point, r
         render_rows([(("20", "30", "40", "60", "70"), remaining_positions)])
     ] * 18)
 
-    # Pull the five-key array apart as three complete rows and promote 40.
+    # Pull the five-key array apart as three complete rows and promote one
+    # of the three legal leaders. Each side keeps at least one key.
     split_sources = remaining_positions
-    split_targets = tuple(final_left[:2]) + (root_one,) + tuple(final_right)
+    split_targets = tuple(final_left) + (root_one,) + tuple(final_right)
     for step in range(1, 43):
         t = ease(step / 42.0)
         positions = tuple(
@@ -4968,15 +5027,15 @@ def btree_borrow_frames(width: int, height: int, root_c: Point, left_c: Point, r
             for source, target in zip(split_sources, split_targets)
         )
         rows = [
-            (("20", "30"), positions[:2]),
-            (("40",), (positions[2],)),
-            (("60", "70"), positions[3:]),
+            (final_left_keys, positions[:len(final_left_keys)]),
+            ((promoted,), (positions[len(final_left_keys)],)),
+            (final_right_keys, positions[len(final_left_keys) + 1:]),
         ]
         frames.append(render_rows(rows, tree=True))
     final_rows = [
-        (("20", "30"), final_left),
-        (("40",), (root_one,)),
-        (("60", "70"), final_right),
+        (final_left_keys, final_left),
+        ((promoted,), (root_one,)),
+        (final_right_keys, final_right),
     ]
     # 30 fps * 3 seconds: keep the final state visible after the action ends.
     frames.extend([render_rows(final_rows, tree=True)] * 90)
@@ -4991,6 +5050,1546 @@ def btree_borrow() -> None:
         fps=30,
         transparent=True,
     )
+
+
+def _rb_delete_case1_btree_array_legacy() -> None:
+    """Render the B-tree layout corresponding to the far-red RB deletion case."""
+    width, height = 1100, 600
+    root_c = (550.0, 120.0)
+    left_c = (300.0, 370.0)
+    right_c = (820.0, 370.0)
+    merged_c = (550.0, 370.0)
+
+    def row(keys: Sequence[str], positions: Sequence[Point]) -> str:
+        return btree_neon_row_at_positions(keys, positions)
+
+    def row_center(points: Sequence[Point]) -> Point:
+        return (
+            sum(point[0] for point in points) / len(points),
+            sum(point[1] for point in points) / len(points),
+        )
+
+    def render_rows(
+        rows: Sequence[tuple[Sequence[str], Sequence[Point]]],
+        *,
+        tree: bool = False,
+        overlay: str = "",
+    ) -> str:
+        parts: list[str] = []
+        if tree and len(rows) == 3:
+            parent = row_center(rows[1][1])
+            for child in (rows[0][1], rows[2][1]):
+                child_center = row_center(child)
+                parts.append(btree_neon_edge(
+                    (parent[0], parent[1] + BTREE_NEON_CELL_H / 2.0),
+                    (child_center[0], child_center[1] - BTREE_NEON_CELL_H / 2.0),
+                ))
+        parts.extend(row(keys, points) for keys, points in rows)
+        parts.append(overlay)
+        return svg("".join(parts), width=width, height=height, color=INK)
+
+    left_three = cell_slots(left_c, 3)
+    root_one = cell_slots(root_c, 1)
+    right_one = cell_slots(right_c, 1)
+    merged_five = cell_slots(merged_c, 5)
+    remaining_four = merged_five[:4]
+    final_left = cell_slots(left_c, 1)
+    final_root = cell_slots(root_c, 1)
+    final_right = cell_slots(right_c, 2)
+    frames: list[str] = []
+
+    initial_rows = [
+        (("2", "5", "6"), left_three),
+        (("7",), root_one),
+        (("9",), right_one),
+    ]
+    frames.extend([render_rows(initial_rows, tree=True)] * 24)
+
+    merge_sources = (left_three, root_one, right_one)
+    merge_targets = (merged_five[:3], (merged_five[3],), (merged_five[4],))
+    for step in range(1, 43):
+        t = ease(step / 42.0)
+        rows = [
+            (keys, tuple(lerp_point(source, target, t) for source, target in zip(source_points, target_points)))
+            for keys, source_points, target_points in zip(
+                (("2", "5", "6"), ("7",), ("9",)),
+                merge_sources,
+                merge_targets,
+            )
+        ]
+        frames.append(render_rows(rows, tree=True))
+    frames.extend([render_rows([(("2", "5", "6", "7", "9"), merged_five)])] * 18)
+
+    deleted_point = merged_five[4]
+
+    def red_dashed_frame(point: Point, opacity: float) -> str:
+        left = point[0] - BTREE_NEON_CELL_W / 2.0 - 5.0
+        right = point[0] + BTREE_NEON_CELL_W / 2.0 + 5.0
+        top = point[1] - BTREE_NEON_CELL_H / 2.0 - 5.0
+        bottom = point[1] + BTREE_NEON_CELL_H / 2.0 + 5.0
+        return (
+            f'<rect x="{left:.1f}" y="{top:.1f}" width="{right - left:.1f}" height="{bottom - top:.1f}" '
+            f'fill="none" stroke="{GLOW_RED}" stroke-width="2.5" stroke-dasharray="7 5" opacity="{opacity:.2f}" rx="9.0"/>'
+        )
+
+    for step in range(1, 19):
+        frames.append(render_rows(
+            [(("2", "5", "6", "7", "9"), merged_five)],
+            overlay=red_dashed_frame(deleted_point, ease(step / 18.0)),
+        ))
+    frames.extend([
+        render_rows(
+            [(("2", "5", "6", "7", "9"), merged_five)],
+            overlay=red_dashed_frame(deleted_point, 1.0),
+        )
+    ] * 8)
+    frames.extend([render_rows([(("2", "5", "6", "7"), remaining_four)])] * 24)
+    frames.extend([render_rows([(("2", "5", "6", "7"), remaining_four)])] * 18)
+
+    split_targets = tuple(final_left) + tuple(final_root) + tuple(final_right)
+    for step in range(1, 43):
+        t = ease(step / 42.0)
+        positions = tuple(
+            lerp_point(source, target, t)
+            for source, target in zip(remaining_four, split_targets)
+        )
+        frames.append(render_rows([
+            (("2",), positions[:1]),
+            (("5",), positions[1:2]),
+            (("6", "7"), positions[2:]),
+        ], tree=True))
+    final_rows = [
+        (("2",), final_left),
+        (("5",), final_root),
+        (("6", "7"), final_right),
+    ]
+    frames.extend([render_rows(final_rows, tree=True)] * 90)
+    render_webm("rb-delete-case1-btree", frames, fps=30, transparent=True)
+
+
+def _rb_delete_case1_btree_binary_style_unused() -> None:
+    """Show case one as a red-black rendering of its B-tree layout."""
+    width, height = 1600, 620
+    initial = {
+        "7": (800.0, 100.0),
+        "5": (560.0, 300.0), "9": (1040.0, 300.0),
+        "2": (460.0, 500.0), "6": (660.0, 500.0),
+    }
+    home = {
+        "5": (650.0, 100.0), "7": (800.0, 100.0), "9": (950.0, 100.0),
+        "2": (500.0, 380.0), "6": (720.0, 380.0),
+    }
+    final = {
+        "5": (800.0, 100.0),
+        "2": (500.0, 380.0), "6": (850.0, 380.0), "7": (950.0, 380.0),
+    }
+    initial_colors = {"7": False, "5": False, "9": False, "2": True, "6": True}
+    home_colors = {"5": True, "7": False, "9": True, "2": True, "6": True}
+    after_delete_colors = {"5": True, "7": False, "2": True, "6": True}
+    final_colors = {"5": False, "2": False, "6": True, "7": False}
+    initial_edges = (("7", "5"), ("7", "9"), ("5", "2"), ("5", "6"))
+    home_edges = (("5", "7"), ("7", "9"), ("5", "2"), ("5", "6"))
+    # Keep the original 7->5 relation visible; folding changes only its lane,
+    # never the endpoints of that relation.
+    final_edges = (("5", "2"), ("7", "5"), ("7", "6"))
+    frames: list[str] = []
+
+    def scene(
+        positions: Mapping[str, Point],
+        colors: Mapping[str, bool],
+        edges: Sequence[tuple[str, str]],
+        *,
+        opacities: Mapping[str, float] | None = None,
+        edge_opacities: Mapping[tuple[str, str], float] | None = None,
+        edge_lanes: Mapping[tuple[str, str], float] | None = None,
+        color_transitions: Mapping[str, tuple[bool, bool, float]] | None = None,
+    ) -> str:
+        opacities = opacities or {}
+        edge_opacities = edge_opacities or {}
+        edge_lanes = edge_lanes or {}
+        color_transitions = color_transitions or {}
+        body = "".join(
+            rb_edge_fragment(
+                (
+                    positions[parent][0],
+                    positions[parent][1] - edge_lanes.get((parent, child), 0.0),
+                ),
+                (
+                    positions[child][0],
+                    positions[child][1] - edge_lanes.get((parent, child), 0.0),
+                ),
+                edge_opacities.get((parent, child), 1.0), False,
+            )
+            for parent, child in edges
+            if parent in positions and child in positions
+        )
+        for key, point in positions.items():
+            opacity = opacities.get(key, 1.0)
+            transition = color_transitions.get(key)
+            if transition is None:
+                body += rb_node(point, key, opacity, red=colors[key])
+            else:
+                before, after, blend = transition
+                body += rb_crossfade_square(point, key, before, after, blend)
+        return svg(body, width=width, height=height, color=INK)
+
+    def move(
+        before_positions: Mapping[str, Point],
+        after_positions: Mapping[str, Point],
+        before_colors: Mapping[str, bool],
+        after_colors: Mapping[str, bool],
+        edges: Sequence[tuple[str, str]],
+        steps: int,
+    ) -> None:
+        for step in range(1, steps + 1):
+            t = ease(step / steps)
+            positions = {
+                key: lerp_point(before_positions[key], after_positions[key], t)
+                for key in before_positions
+            }
+            transitions = {
+                key: (before_colors[key], after_colors[key], t)
+                for key in positions
+                if before_colors[key] != after_colors[key]
+            }
+            frames.append(scene(positions, after_colors, edges, color_transitions=transitions))
+
+    frames.extend([scene(initial, initial_colors, initial_edges)] * 30)
+
+    # Fold the binary tree into the B-tree member row without recolouring yet.
+    move(initial, home, initial_colors, initial_colors, initial_edges, 48)
+    frames.extend([scene(home, initial_colors, home_edges)] * 24)
+    for step in range(1, 25):
+        t = ease(step / 24.0)
+        transitions = {
+            key: (initial_colors[key], home_colors[key], t)
+            for key in home
+            if initial_colors[key] != home_colors[key]
+        }
+        frames.append(scene(home, home_colors, home_edges, color_transitions=transitions))
+    frames.extend([scene(home, home_colors, home_edges)] * 24)
+
+    # Delete 9 from the compact member row.
+    for step in range(1, 25):
+        t = ease(step / 24.0)
+        frames.append(scene(
+            home,
+            home_colors,
+            home_edges,
+            opacities={"9": 1.0 - t},
+            edge_opacities={("7", "9"): 1.0 - t},
+        ))
+    remaining = {key: point for key, point in home.items() if key != "9"}
+    remaining_colors = {key: value for key, value in after_delete_colors.items()}
+    remaining_edges = tuple(edge for edge in home_edges if "9" not in edge)
+    frames.extend([scene(remaining, remaining_colors, remaining_edges)] * 30)
+
+    # Re-elect the local root into the final binary layout; only then recolour.
+    for step in range(1, 55):
+        t = ease(step / 54.0)
+        positions = {
+            key: lerp_point(remaining[key], final[key], t)
+            for key in final
+        }
+        if step < 28:
+            edges = remaining_edges
+        else:
+            edges = final_edges
+        frames.append(scene(positions, remaining_colors, edges))
+    frames.extend([scene(final, remaining_colors, final_edges)] * 24)
+    for step in range(1, 25):
+        t = ease(step / 24.0)
+        transitions = {
+            key: (remaining_colors[key], final_colors[key], t)
+            for key in final
+            if remaining_colors[key] != final_colors[key]
+        }
+        frames.append(scene(final, final_colors, final_edges, color_transitions=transitions))
+    frames.extend([scene(final, final_colors, final_edges)] * 90)
+    render_webm("rb-delete-case1-btree", frames, fps=30, transparent=True, crop_pad=24)
+
+
+def rb_delete_case1_btree() -> None:
+    """Show case one as a red-black encoding of its B-tree member rows."""
+    width, height = 1900, 820
+    initial = {
+        "7": (950.0, 110.0),
+        "2": (500.0, 360.0), "5": (650.0, 360.0), "6": (800.0, 360.0),
+        "9": (1150.0, 360.0),
+    }
+    merged = {
+        "2": (500.0, 360.0), "5": (650.0, 360.0), "6": (800.0, 360.0),
+        "7": (950.0, 360.0), "9": (1150.0, 360.0),
+    }
+    remaining = {key: point for key, point in merged.items() if key != "9"}
+    final = {
+        "5": (700.0, 100.0), "2": (500.0, 320.0),
+        "6": (800.0, 320.0), "7": (900.0, 320.0),
+    }
+    initial_colors = {"7": False, "2": True, "5": False, "6": True, "9": False}
+    home_colors = {"7": False, "2": True, "5": True, "6": True, "9": True}
+    pullback_colors = {"5": False, "2": True, "6": True, "7": True}
+    reelected_colors = {"5": True, "2": False, "6": True, "7": False}
+    final_colors = {"5": False, "2": False, "6": True, "7": False}
+    # The encoded B-tree node keeps 5 as the black middle key: both 2 and 6
+    # remain its members, while the original 7->5 relation stays intact.
+    initial_edges = (("7", "5"), ("7", "9"), ("5", "2"), ("5", "6"))
+    merged_edges = (("5", "2"), ("5", "6"), ("7", "5"), ("7", "9"))
+    remaining_edges = (("5", "2"), ("5", "6"), ("7", "5"))
+    detached_edges = (("7", "5"),)
+    final_edges = (("5", "2"), ("5", "7"), ("7", "6"))
+    frames: list[str] = []
+
+    def scene(
+        positions: Mapping[str, Point],
+        colors: Mapping[str, bool],
+        edges: Sequence[tuple[str, str]],
+        *,
+        opacities: Mapping[str, float] | None = None,
+        edge_opacities: Mapping[tuple[str, str], float] | None = None,
+        edge_lanes: Mapping[tuple[str, str], float] | None = None,
+        color_transitions: Mapping[str, tuple[bool, bool, float]] | None = None,
+    ) -> str:
+        opacities = opacities or {}
+        edge_opacities = edge_opacities or {}
+        edge_lanes = edge_lanes or {}
+        color_transitions = color_transitions or {}
+        body = "".join(
+            rb_edge_fragment(
+                (
+                    positions[parent][0],
+                    positions[parent][1] - edge_lanes.get((parent, child), 0.0),
+                ),
+                (
+                    positions[child][0],
+                    positions[child][1] - edge_lanes.get((parent, child), 0.0),
+                ),
+                edge_opacities.get((parent, child), 1.0), False,
+            )
+            for parent, child in edges
+            if parent in positions and child in positions
+        )
+        for key, point in positions.items():
+            opacity = opacities.get(key, 1.0)
+            transition = color_transitions.get(key)
+            if transition is None:
+                body += rb_node(point, key, opacity, red=colors[key])
+            else:
+                before, after, blend = transition
+                body += rb_node(point, opacity=opacity * (1.0 - blend), key=key, red=before)
+                body += rb_node(point, opacity=opacity * blend, key=key, red=after)
+        return svg(body, width=width, height=height, color=INK)
+
+    def move(
+        before_positions: Mapping[str, Point],
+        after_positions: Mapping[str, Point],
+        colors: Mapping[str, bool],
+        before_edges: Sequence[tuple[str, str]],
+        after_edges: Sequence[tuple[str, str]],
+        steps: int,
+        *,
+        after_lanes: Mapping[tuple[str, str], float] | None = None,
+    ) -> None:
+        after_lanes = after_lanes or {}
+        for step in range(1, steps + 1):
+            t = ease(step / steps)
+            positions = {
+                key: lerp_point(before_positions[key], after_positions[key], t)
+                for key in before_positions
+            }
+            edges = before_edges if step <= steps // 2 else after_edges
+            frames.append(scene(
+                positions,
+                colors,
+                edges,
+                edge_lanes={edge: lane * t for edge, lane in after_lanes.items()},
+            ))
+
+    frames.extend([scene(initial, initial_colors, initial_edges)] * 30)
+    # The original 7--5 relation survives folding. It rises above the member
+    # row, while 5 keeps both horizontal member links to 2 and 6.
+    member_lanes = {("7", "5"): 10.0}
+    move(initial, merged, initial_colors, initial_edges, merged_edges, 54, after_lanes=member_lanes)
+    frames.extend([scene(merged, initial_colors, merged_edges, edge_lanes=member_lanes)] * 20)
+
+    # 7 has returned to the member row; only after that do 5 and 9 turn red.
+    for step in range(1, 25):
+        t = ease(step / 24.0)
+        transitions = {
+            key: (initial_colors[key], home_colors[key], t)
+            for key in merged
+            if initial_colors[key] != home_colors[key]
+        }
+        frames.append(scene(
+            merged, home_colors, merged_edges,
+            edge_lanes=member_lanes,
+            color_transitions=transitions,
+        ))
+    frames.extend([scene(merged, home_colors, merged_edges, edge_lanes=member_lanes)] * 24)
+
+    # Delete 9 in place, including its same-row member relation.
+    for step in range(1, 25):
+        t = ease(step / 24.0)
+        frames.append(scene(
+            merged,
+            home_colors,
+            merged_edges,
+            opacities={"9": 1.0 - t},
+            edge_opacities={("7", "9"): 1.0 - t},
+            edge_lanes=member_lanes,
+        ))
+    remaining = {key: point for key, point in merged.items() if key != "9"}
+    remaining_colors = {key: value for key, value in home_colors.items() if key != "9"}
+    remaining_edges = tuple(edge for edge in merged_edges if "9" not in edge)
+    frames.extend([scene(remaining, remaining_colors, remaining_edges, edge_lanes=member_lanes)] * 30)
+
+    # 1. 6和5之间的连线直接切换为6和7之间的连线（代表B树内部分组变化，无需机械旋转）
+    # 原来: ("5", "2"), ("5", "6"), ("7", "5")
+    # 切换为: ("5", "2"), ("7", "5"), ("7", "6")
+    rewired_edges = (("5", "2"), ("7", "5"), ("7", "6"))
+    for step in range(1, 25):
+        t = ease(step / 24.0)
+        frames.append(scene(
+            remaining,
+            remaining_colors,
+            (("5", "2"), ("5", "6"), ("7", "5"), ("7", "6")),
+            edge_opacities={("5", "6"): 1.0 - t, ("7", "6"): t},
+            edge_lanes=member_lanes,
+        ))
+    frames.extend([scene(remaining, remaining_colors, rewired_edges, edge_lanes=member_lanes)] * 20)
+
+    # 2. 5变成黑色，2、7变成红色 (6保持红色)
+    # 当前 remaining_colors: 7:黑, 2:红, 5:红, 6:红
+    # 目标 stage1_colors: 5:黑, 7:红, 2:红, 6:红
+    stage1_colors = {"5": False, "7": True, "2": True, "6": True}
+    for step in range(1, 25):
+        t = ease(step / 24.0)
+        transitions = {
+            key: (remaining_colors[key], stage1_colors[key], t)
+            for key in remaining
+            if remaining_colors[key] != stage1_colors[key]
+        }
+        frames.append(scene(
+            remaining,
+            stage1_colors,
+            rewired_edges,
+            edge_lanes=member_lanes,
+            color_transitions=transitions,
+        ))
+    frames.extend([scene(remaining, stage1_colors, rewired_edges, edge_lanes=member_lanes)] * 20)
+
+    # 3. 5重新被推举上去。在推举过程中，5变成红色，2、7变成黑色（6保持红色）
+    # 5从 (650, 360) 移动到 final["5"] (700, 100)
+    # 2, 6, 7 分散微调到 final 对应位置
+    # edge_lanes 随 5 升层平滑归零
+    stage2_colors = {"5": True, "7": False, "2": False, "6": True}
+    for step in range(1, 45):
+        t = ease(step / 44.0)
+        positions = {
+            key: lerp_point(remaining[key], final[key], t)
+            for key in remaining
+        }
+        transitions = {
+            key: (stage1_colors[key], stage2_colors[key], t)
+            for key in remaining
+            if stage1_colors[key] != stage2_colors[key]
+        }
+        frames.append(scene(
+            positions,
+            stage2_colors,
+            rewired_edges,
+            edge_lanes={("7", "5"): 10.0 * (1.0 - t)},
+            color_transitions=transitions,
+        ))
+    frames.extend([scene(final, stage2_colors, rewired_edges)] * 20)
+
+    # 4. 最后 5（新根节点）再变成黑色
+    # 最终状态：5黑，2黑，6红，7黑
+    stage3_colors = {"5": False, "2": False, "6": True, "7": False}
+    for step in range(1, 21):
+        t = ease(step / 20.0)
+        transitions = {
+            "5": (stage2_colors["5"], stage3_colors["5"], t),
+        }
+        frames.append(scene(
+            final,
+            stage3_colors,
+            rewired_edges,
+            color_transitions=transitions,
+        ))
+    frames.extend([scene(final, stage3_colors, rewired_edges)] * 90)
+    render_webm("rb-delete-case1-btree", frames, fps=30, transparent=True, crop_pad=24)
+
+
+def _rb_delete_case2_btree_legacy() -> None:
+    """Render the B-tree layout corresponding to the near-red RB deletion case."""
+    width, height = 1100, 600
+    root_c = (550.0, 120.0)
+    left_c = (300.0, 370.0)
+    right_c = (820.0, 370.0)
+    merged_c = (550.0, 370.0)
+
+    def row(keys: Sequence[str], positions: Sequence[Point]) -> str:
+        return btree_neon_row_at_positions(keys, positions)
+
+    def row_center(points: Sequence[Point]) -> Point:
+        return (
+            sum(point[0] for point in points) / len(points),
+            sum(point[1] for point in points) / len(points),
+        )
+
+    def render_rows(
+        rows: Sequence[tuple[Sequence[str], Sequence[Point]]],
+        *,
+        tree: bool = False,
+        overlay: str = "",
+    ) -> str:
+        parts: list[str] = []
+        if tree and len(rows) == 3:
+            parent = row_center(rows[1][1])
+            for child in (rows[0][1], rows[2][1]):
+                child_center = row_center(child)
+                parts.append(btree_neon_edge(
+                    (parent[0], parent[1] + BTREE_NEON_CELL_H / 2.0),
+                    (child_center[0], child_center[1] - BTREE_NEON_CELL_H / 2.0),
+                ))
+        parts.extend(row(keys, points) for keys, points in rows)
+        parts.append(overlay)
+        return svg("".join(parts), width=width, height=height, color=INK)
+
+    left_two = cell_slots(left_c, 2)
+    root_one = cell_slots(root_c, 1)
+    right_one = cell_slots(right_c, 1)
+    merged_four = cell_slots(merged_c, 4)
+    remaining_three = merged_four[:3]
+    final_left = cell_slots(left_c, 1)
+    final_root = cell_slots(root_c, 1)
+    final_right = cell_slots(right_c, 1)
+    frames: list[str] = []
+
+    initial_rows = [
+        (("5", "6"), left_two),
+        (("7",), root_one),
+        (("9",), right_one),
+    ]
+    frames.extend([render_rows(initial_rows, tree=True)] * 24)
+
+    merge_sources = (left_two, root_one, right_one)
+    merge_targets = (merged_four[:2], (merged_four[2],), (merged_four[3],))
+    for step in range(1, 43):
+        t = ease(step / 42.0)
+        rows = [
+            (keys, tuple(lerp_point(source, target, t) for source, target in zip(source_points, target_points)))
+            for keys, source_points, target_points in zip(
+                (("5", "6"), ("7",), ("9",)),
+                merge_sources,
+                merge_targets,
+            )
+        ]
+        frames.append(render_rows(rows, tree=True))
+    frames.extend([render_rows([(("5", "6", "7", "9"), merged_four)])] * 18)
+
+    deleted_point = merged_four[3]
+
+    def red_dashed_frame(point: Point, opacity: float) -> str:
+        left = point[0] - BTREE_NEON_CELL_W / 2.0 - 5.0
+        right = point[0] + BTREE_NEON_CELL_W / 2.0 + 5.0
+        top = point[1] - BTREE_NEON_CELL_H / 2.0 - 5.0
+        bottom = point[1] + BTREE_NEON_CELL_H / 2.0 + 5.0
+        return (
+            f'<rect x="{left:.1f}" y="{top:.1f}" width="{right - left:.1f}" height="{bottom - top:.1f}" '
+            f'fill="none" stroke="{GLOW_RED}" stroke-width="2.5" stroke-dasharray="7 5" opacity="{opacity:.2f}" rx="9.0"/>'
+        )
+
+    for step in range(1, 19):
+        frames.append(render_rows(
+            [(("5", "6", "7", "9"), merged_four)],
+            overlay=red_dashed_frame(deleted_point, ease(step / 18.0)),
+        ))
+    frames.extend([
+        render_rows(
+            [(("5", "6", "7", "9"), merged_four)],
+            overlay=red_dashed_frame(deleted_point, 1.0),
+        )
+    ] * 8)
+    frames.extend([render_rows([(("5", "6", "7"), remaining_three)])] * 24)
+    frames.extend([render_rows([(("5", "6", "7"), remaining_three)])] * 18)
+
+    split_targets = tuple(final_left) + tuple(final_root) + tuple(final_right)
+    for step in range(1, 43):
+        t = ease(step / 42.0)
+        positions = tuple(
+            lerp_point(source, target, t)
+            for source, target in zip(remaining_three, split_targets)
+        )
+        frames.append(render_rows([
+            (("5",), positions[:1]),
+            (("6",), positions[1:2]),
+            (("7",), positions[2:]),
+        ], tree=True))
+    final_rows = [
+        (("5",), final_left),
+        (("6",), final_root),
+        (("7",), final_right),
+    ]
+    frames.extend([render_rows(final_rows, tree=True)] * 90)
+    render_webm("rb-delete-case2-btree", frames, fps=30, transparent=True)
+
+
+def rb_delete_case2_btree() -> None:
+    """Render the near-red case in the red-black square-node visual style."""
+    width, height = 1500, 700
+
+    def scene(
+        positions: Mapping[str, Point],
+        colors: Mapping[str, bool],
+        edges: Sequence[tuple[str, str]],
+        *,
+        opacities: Mapping[str, float] | None = None,
+        edge_opacity: Mapping[tuple[str, str], float] | None = None,
+        edge_lanes: Mapping[tuple[str, str], float] | None = None,
+        color_transitions: Mapping[str, tuple[bool, bool, float]] | None = None,
+    ) -> str:
+        opacities = opacities or {}
+        edge_opacity = edge_opacity or {}
+        edge_lanes = edge_lanes or {}
+        color_transitions = color_transitions or {}
+        nodes = []
+        for key, point in positions.items():
+            opacity = opacities.get(key, 1.0)
+            transition = color_transitions.get(key)
+            if transition is None:
+                nodes.append((key, point, opacity, colors[key]))
+            else:
+                before, after, blend = transition
+                nodes.extend((
+                    (key, point, opacity * (1.0 - blend), before),
+                    (key, point, opacity * blend, after),
+                ))
+        edge_parts = []
+        for parent, child in edges:
+            opacity = edge_opacity.get((parent, child), 1.0)
+            if opacity <= 0.0:
+                continue
+            lane = edge_lanes.get((parent, child), 0.0)
+            if lane == 0.0:
+                edge_parts.append(rb_edge_fragment(positions[parent], positions[child], opacity, False))
+                continue
+            # A folded same-level relation gets its own lane so 5--7 is not
+            # hidden behind the middle node 6 and cannot read as 6--7.
+            start = positions[parent]
+            end = positions[child]
+            edge_parts.append(rb_edge_fragment(
+                (start[0], start[1] - lane),
+                (end[0], end[1] - lane),
+                opacity,
+                False,
+            ))
+        body = "".join(edge_parts) + "".join(
+            rb_node(point, key, opacity, red=red)
+            for key, point, opacity, red in nodes
+        )
+        return svg(body, width=width, height=height, color=INK)
+
+    initial = {
+        "7": (750.0, 140.0),
+        "5": (540.0, 350.0),
+        "6": (650.0, 350.0),
+        "9": (960.0, 350.0),
+    }
+    initial_colors = {"7": False, "5": False, "6": True, "9": False}
+    initial_edges = (("7", "5"), ("7", "9"), ("5", "6"))
+    frames: list[str] = [scene(initial, initial_colors, initial_edges)] * 24
+
+    # Fold the encoded members into one temporary four-key B-tree row. The
+    # red-black squares remain visible; only the semantic layout changes.
+    row = {"5": (540.0, 350.0), "6": (650.0, 350.0), "7": (760.0, 350.0), "9": (870.0, 350.0)}
+    row_colors = {"5": True, "6": True, "7": False, "9": True}
+    # Folding 7 back preserves 5--6 and adds 5--7. It must not turn the new
+    # relation into the visually tempting but semantically wrong 6--7 edge.
+    row_edges = (("5", "6"), ("5", "7"), ("7", "9"))
+    for step in range(1, 43):
+        t = ease(step / 42.0)
+        positions = {
+            key: lerp_point(initial[key], row[key], t)
+            for key in initial
+        }
+        frames.append(scene(
+            positions,
+            initial_colors,
+            tuple(dict.fromkeys(initial_edges + row_edges)),
+            edge_opacity={
+                **{edge: 1.0 - t for edge in initial_edges if edge not in row_edges},
+                **{edge: t for edge in row_edges if edge not in initial_edges},
+                **{edge: 1.0 for edge in set(initial_edges) & set(row_edges)},
+            },
+            edge_lanes={("5", "7"): 10.0 * t},
+            color_transitions={
+                key: (initial_colors[key], row_colors[key], t)
+                for key in initial
+                if initial_colors[key] != row_colors[key]
+            },
+        ))
+    frames.extend([scene(row, row_colors, row_edges, edge_lanes={("5", "7"): 10.0})] * 18)
+
+    # Delete the rightmost member, leaving the three-key overflow row.
+    for step in range(1, 19):
+        t = ease(step / 18.0)
+        frames.append(scene(
+            row,
+            row_colors,
+            row_edges,
+            opacities={"9": 1.0 - t},
+            edge_opacity={("7", "9"): 1.0 - t},
+            edge_lanes={("5", "7"): 10.0},
+        ))
+    remaining = {key: row[key] for key in ("5", "6", "7")}
+    remaining_colors = {"5": True, "6": True, "7": False}
+    folded_edges = (("5", "6"), ("5", "7"))
+    frames.extend([scene(remaining, remaining_colors, folded_edges, edge_lanes={("5", "7"): 10.0})] * 24)
+
+    # Settle the upper 5--7 lane back onto the row before changing colours.
+    for step in range(1, 25):
+        t = ease(step / 24.0)
+        frames.append(scene(
+            remaining,
+            remaining_colors,
+            folded_edges if step < 12 else (("5", "6"), ("6", "7")),
+        ))
+    single_line_edges = (("5", "6"), ("6", "7"))
+    frames.extend([scene(remaining, remaining_colors, single_line_edges)] * 18)
+
+    # First recolour in the row: 6 becomes black and 5/7 become red. This is
+    # a separate settled state before the promoted key starts moving.
+    recolored_row = {"5": True, "6": False, "7": True}
+    for step in range(1, 25):
+        t = ease(step / 24.0)
+        frames.append(scene(
+            remaining,
+            remaining_colors,
+            single_line_edges,
+            color_transitions={
+                key: (remaining_colors[key], recolored_row[key], t)
+                for key in remaining
+                if remaining_colors[key] != recolored_row[key]
+            },
+        ))
+    frames.extend([scene(remaining, recolored_row, single_line_edges)] * 18)
+
+    # Split the three-key row: 6 rises while the second colour change happens.
+    split = {"5": (540.0, 430.0), "6": (750.0, 170.0), "7": (960.0, 430.0)}
+    # During promotion, 6 changes from black to red while 5 and 7 change from
+    # red to black along the same eased progress as their movement.
+    split_colors = {"5": False, "6": True, "7": False}
+    split_edges = (("6", "5"), ("6", "7"))
+    for step in range(1, 49):
+        t = ease(step / 48.0)
+        positions = {key: lerp_point(remaining[key], split[key], t) for key in remaining}
+        frames.append(scene(
+            positions,
+            recolored_row,
+            split_edges,
+            edge_opacity={edge: t for edge in split_edges},
+            color_transitions={
+                key: (recolored_row[key], split_colors[key], t)
+                for key in remaining
+                if recolored_row[key] != split_colors[key]
+            },
+        ))
+    frames.extend([scene(split, split_colors, split_edges)] * 18)
+
+    # The promotion already completed the second colour change.
+    re_elected = split_colors
+    frames.extend([scene(split, re_elected, split_edges)] * 18)
+    final_colors = {"5": False, "6": False, "7": False}
+    for step in range(1, 19):
+        t = ease(step / 18.0)
+        frames.append(scene(
+            split,
+            re_elected,
+            split_edges,
+            color_transitions={"6": (True, False, t)},
+        ))
+    frames.extend([scene(split, final_colors, split_edges)] * 60)
+    render_webm("rb-delete-case2-btree", frames, fps=30, transparent=True, crop_pad=24)
+
+
+def _rb_delete_case3_btree_array_legacy() -> None:
+    """Render the B-tree states underlying the black-parent RB deletion case."""
+    width, height = 1200, 700
+
+    def scene(
+        nodes: Mapping[str, tuple[Sequence[str], Point]],
+        edges: Sequence[tuple[str, str, int]],
+        *,
+        opacity: float = 1.0,
+    ) -> str:
+        parts: list[str] = []
+        rows = {
+            name: (keys, tuple(btree_neon_slots(center, len(keys))))
+            for name, (keys, center) in nodes.items()
+            if keys
+        }
+        for parent, child, slot in edges:
+            if parent not in rows or child not in rows:
+                continue
+            parent_keys, parent_points = rows[parent]
+            _child_keys, child_points = rows[child]
+            parts.append(btree_neon_edge(
+                btree_neon_gap(nodes[parent][1], len(parent_keys), slot),
+                (
+                    sum(point[0] for point in child_points) / len(child_points),
+                    child_points[0][1] - BTREE_NEON_CELL_H / 2.0,
+                ),
+                opacity=opacity,
+            ))
+        for keys, points in rows.values():
+            parts.append(btree_neon_row_at_positions(keys, points, opacity=opacity))
+        return svg("".join(parts), width=width, height=height, color=INK)
+
+    def transition(
+        before_nodes: Mapping[str, tuple[Sequence[str], Point]],
+        before_edges: Sequence[tuple[str, str, int]],
+        after_nodes: Mapping[str, tuple[Sequence[str], Point]],
+        after_edges: Sequence[tuple[str, str, int]],
+        frames: list[str],
+        steps: int = 30,
+    ) -> None:
+        before_points = {
+            key: point
+            for keys, center in before_nodes.values()
+            for key, point in zip(keys, btree_neon_slots(center, len(keys)))
+        }
+        after_points = {
+            key: point
+            for keys, center in after_nodes.values()
+            for key, point in zip(keys, btree_neon_slots(center, len(keys)))
+        }
+        for step in range(1, steps + 1):
+            t = ease(step / steps)
+            moving_points = {
+                key: lerp_point(before_points[key], after_points[key], t)
+                for key in before_points
+                if key in after_points
+            }
+            active_nodes = before_nodes if step <= steps // 2 else after_nodes
+            active_edges = before_edges if step <= steps // 2 else after_edges
+            moving_nodes = {
+                name: (
+                    tuple(key for key in keys if key in moving_points),
+                    (
+                        sum(moving_points[key][0] for key in keys if key in moving_points)
+                        / len(tuple(key for key in keys if key in moving_points)),
+                        sum(moving_points[key][1] for key in keys if key in moving_points)
+                        / len(tuple(key for key in keys if key in moving_points)),
+                    ),
+                )
+                for name, (keys, _center) in active_nodes.items()
+                if any(key in moving_points for key in keys)
+            }
+            visible = set(moving_nodes)
+            frames.append(scene(
+                moving_nodes,
+                tuple(edge for edge in active_edges if edge[0] in visible and edge[1] in visible),
+            ))
+
+    initial = {
+        "root": (("15",), (600.0, 90.0)),
+        "left": (("8",), (330.0, 275.0)),
+        "right": (("18", "27"), (870.0, 275.0)),
+        "six": (("6",), (180.0, 500.0)),
+        "nine": (("9",), (480.0, 500.0)),
+        "seventeen": (("17",), (690.0, 500.0)),
+        "twenty_five": (("25",), (870.0, 500.0)),
+        "thirty_four": (("34",), (1050.0, 500.0)),
+    }
+    initial_edges = (
+        ("root", "left", 0), ("root", "right", 1),
+        ("left", "six", 0), ("left", "nine", 1),
+        ("right", "seventeen", 0), ("right", "twenty_five", 1), ("right", "thirty_four", 2),
+    )
+    home = {
+        "root": initial["root"],
+        "left_leaf": (("6", "8", "9"), (330.0, 500.0)),
+        "right": initial["right"],
+        "seventeen": initial["seventeen"],
+        "twenty_five": initial["twenty_five"],
+        "thirty_four": initial["thirty_four"],
+    }
+    home_edges = (
+        ("root", "left_leaf", 0), ("root", "right", 1),
+        ("right", "seventeen", 0), ("right", "twenty_five", 1), ("right", "thirty_four", 2),
+    )
+    deleted = dict(home)
+    deleted["left_leaf"] = (("6", "8"), (330.0, 500.0))
+    upper_row = {
+        "root": (("15", "18", "27"), (600.0, 90.0)),
+        "left_leaf": deleted["left_leaf"],
+        "seventeen": deleted["seventeen"],
+        "twenty_five": deleted["twenty_five"],
+        "thirty_four": deleted["thirty_four"],
+    }
+    upper_edges = (
+        ("root", "left_leaf", 0), ("root", "seventeen", 1),
+        ("root", "twenty_five", 2), ("root", "thirty_four", 3),
+    )
+    final = {
+        "root": (("18",), (600.0, 90.0)),
+        "left": (("15",), (390.0, 275.0)),
+        "right": (("27",), (810.0, 275.0)),
+        "left_leaf": (("6", "8"), (300.0, 500.0)),
+        "seventeen": (("17",), (510.0, 500.0)),
+        "twenty_five": (("25",), (750.0, 500.0)),
+        "thirty_four": (("34",), (960.0, 500.0)),
+    }
+    final_edges = (
+        ("root", "left", 0), ("root", "right", 1),
+        ("left", "left_leaf", 0), ("left", "seventeen", 1),
+        ("right", "twenty_five", 0), ("right", "thirty_four", 1),
+    )
+
+    frames: list[str] = [scene(initial, initial_edges)] * 30
+    transition(initial, initial_edges, home, home_edges, frames)
+    frames.extend([scene(home, home_edges)] * 24)
+    transition(home, home_edges, deleted, home_edges, frames, steps=20)
+    frames.extend([scene(deleted, home_edges)] * 24)
+    transition(deleted, home_edges, upper_row, upper_edges, frames)
+    frames.extend([scene(upper_row, upper_edges)] * 24)
+    transition(upper_row, upper_edges, final, final_edges, frames)
+    frames.extend([scene(final, final_edges)] * 90)
+    render_webm("rb-delete-case3-btree", frames, fps=30, transparent=True, crop_pad=24)
+
+
+def _rb_delete_case3_btree_rotation_legacy() -> None:
+    """Show case three as red-black nodes encoding the B-tree member groups."""
+    width, height = 1900, 820
+
+    def scene(
+        positions: Mapping[str, Point],
+        colors: Mapping[str, bool],
+        edges: Sequence[tuple[str, str]],
+        *,
+        opacities: Mapping[str, float] | None = None,
+        transitions: Mapping[str, tuple[bool, bool, float]] | None = None,
+        vacant: tuple[Point, float, str] | None = None,
+    ) -> str:
+        opacities = opacities or {}
+        transitions = transitions or {}
+        parts: list[str] = []
+        if vacant is not None:
+            point, opacity, parent = vacant
+            parts.append(rb_edge_fragment(positions[parent], point, opacity, False))
+            x, y = point
+            parts.append(
+                f'<rect x="{x - RB_NODE_W / 2:.1f}" y="{y - RB_NODE_H / 2:.1f}" '
+                f'width="{RB_NODE_W:.1f}" height="{RB_NODE_H:.1f}" rx="9" fill="none" '
+                f'stroke="{RB_BLACK_INK}" stroke-width="2.4" stroke-dasharray="7 5" opacity="{opacity:.3f}"/>'
+            )
+        parts.extend(
+            rb_edge_fragment(positions[parent], positions[child], 1.0, False)
+            for parent, child in edges
+        )
+        for key, point in positions.items():
+            opacity = opacities.get(key, 1.0)
+            transition = transitions.get(key)
+            if transition is None:
+                parts.append(rb_node(point, key, opacity, red=colors[key]))
+            else:
+                before, after, blend = transition
+                parts.append(rb_node(point, key, opacity * (1.0 - blend), red=before))
+                parts.append(rb_node(point, key, opacity * blend, red=after))
+        return svg("".join(parts), width=width, height=height, color=INK)
+
+    def move(
+        before: Mapping[str, Point],
+        after: Mapping[str, Point],
+        colors: Mapping[str, bool],
+        before_edges: Sequence[tuple[str, str]],
+        after_edges: Sequence[tuple[str, str]],
+        frames: list[str],
+        steps: int = 42,
+    ) -> None:
+        for step in range(1, steps + 1):
+            t = ease(step / steps)
+            positions = {
+                key: lerp_point(before[key], after[key], t)
+                for key in before
+            }
+            frames.append(scene(
+                positions,
+                colors,
+                before_edges if step <= steps // 2 else after_edges,
+            ))
+
+    initial = {
+        "15": (950.0, 105.0), "8": (750.0, 300.0), "18": (950.0, 300.0),
+        "6": (650.0, 505.0), "9": (850.0, 505.0), "17": (900.0, 505.0),
+        "27": (1150.0, 300.0), "25": (1050.0, 505.0), "34": (1250.0, 505.0),
+    }
+    colors_initial = {
+        "15": False, "8": False, "18": False, "6": False, "9": False,
+        "17": False, "27": True, "25": False, "34": False,
+    }
+    initial_edges = (
+        ("15", "8"), ("15", "18"), ("8", "6"), ("8", "9"),
+        ("18", "17"), ("18", "27"), ("27", "25"), ("27", "34"),
+    )
+
+    home = dict(initial)
+    colors_home = dict(colors_initial)
+    colors_home.update({"6": True, "9": True})
+    home_edges = (
+        ("15", "18"), ("6", "8"), ("8", "9"),
+        ("18", "17"), ("18", "27"), ("27", "25"), ("27", "34"),
+    )
+
+    after_delete = dict(home)
+    after_delete.pop("9")
+    colors_delete = {key: value for key, value in colors_home.items() if key != "9"}
+    delete_edges = tuple(edge for edge in home_edges if "9" not in edge)
+
+    upper_row = {
+        "15": (750.0, 300.0), "18": (950.0, 300.0), "27": (1150.0, 300.0),
+        "6": (650.0, 505.0), "8": (750.0, 505.0), "17": (900.0, 505.0),
+        "25": (1050.0, 505.0), "34": (1250.0, 505.0),
+    }
+    colors_upper = dict(colors_delete)
+    colors_upper.update({"15": True, "18": False, "27": True})
+    upper_edges = (
+        ("18", "15"), ("18", "27"), ("6", "8"),
+        ("15", "8"), ("15", "17"), ("27", "25"), ("27", "34"),
+    )
+
+    final = {
+        "18": (950.0, 105.0), "15": (700.0, 320.0), "27": (1200.0, 320.0),
+        "6": (600.0, 540.0), "8": (800.0, 540.0), "17": (900.0, 540.0),
+        "25": (1100.0, 540.0), "34": (1300.0, 540.0),
+    }
+    colors_final = dict(colors_upper)
+    final_edges = (
+        ("18", "15"), ("18", "27"), ("15", "8"), ("15", "17"),
+        ("8", "6"), ("27", "25"), ("27", "34"),
+    )
+
+    frames: list[str] = [scene(initial, colors_initial, initial_edges)] * 30
+    for step in range(1, 43):
+        t = ease(step / 42.0)
+        positions = {key: lerp_point(initial[key], home[key], t) for key in initial}
+        frames.append(scene(
+            positions,
+            colors_initial,
+            initial_edges if step <= 21 else home_edges,
+            vacant=(initial["8"], t if step > 21 else 0.0, "15"),
+        ))
+    for step in range(1, 25):
+        t = ease(step / 24.0)
+        frames.append(scene(
+            home,
+            colors_home,
+            home_edges,
+            transitions={
+                key: (colors_initial[key], colors_home[key], t)
+                for key in ("6", "9")
+            },
+            vacant=(initial["8"], 1.0, "15"),
+        ))
+    frames.extend([scene(home, colors_home, home_edges, vacant=(initial["8"], 1.0, "15"))] * 24)
+
+    for step in range(1, 20):
+        t = ease(step / 19.0)
+        frames.append(scene(
+            home,
+            colors_home,
+            home_edges,
+            opacities={"9": 1.0 - t},
+            vacant=(initial["8"], 1.0, "15"),
+        ))
+    frames.extend([scene(after_delete, colors_delete, delete_edges, vacant=(initial["8"], 1.0, "15"))] * 24)
+    # The vacant former 8 slot and the right 18/27 group pull 15 down into
+    # one merged B-tree member row. This is a merge, not a tree rotation.
+    for step in range(1, 43):
+        t = ease(step / 42.0)
+        positions = {key: lerp_point(after_delete[key], upper_row[key], t) for key in after_delete}
+        frames.append(scene(
+            positions,
+            colors_delete,
+            delete_edges if step <= 21 else upper_edges,
+            vacant=(initial["8"], 1.0 - t, "15"),
+        ))
+    frames.extend([scene(upper_row, colors_upper, upper_edges)] * 24)
+    # 18 is the black leader of the merged row. It is pushed up to fill the
+    # empty root position; 15 and 27 stay its red member children.
+    move(upper_row, final, colors_upper, upper_edges, final_edges, frames)
+    frames.extend([scene(final, colors_final, final_edges)] * 90)
+    render_webm("rb-delete-case3-btree", frames, fps=30, transparent=True, crop_pad=24)
+
+
+def rb_delete_case3_btree() -> None:
+    """Show case three as red-black coloring over B-tree merge/promotion steps."""
+    width, height = 1900, 820
+
+    def scene(
+        positions: Mapping[str, Point],
+        colors: Mapping[str, bool],
+        edges: Sequence[tuple[str, str]],
+        *,
+        opacities: Mapping[str, float] | None = None,
+        transitions: Mapping[str, tuple[bool, bool, float]] | None = None,
+        vacant: tuple[Point, float, str] | None = None,
+    ) -> str:
+        opacities = opacities or {}
+        transitions = transitions or {}
+        body: list[str] = []
+        if vacant is not None:
+            point, opacity, parent = vacant
+            if opacity > 0.0:
+                body.append(rb_edge_fragment(positions[parent], point, opacity, False))
+                x, y = point
+                body.append(
+                    f'<rect x="{x - RB_NODE_W / 2:.1f}" y="{y - RB_NODE_H / 2:.1f}" '
+                    f'width="{RB_NODE_W:.1f}" height="{RB_NODE_H:.1f}" rx="9" fill="none" '
+                    f'stroke="{RB_BLACK_INK}" stroke-width="2.4" stroke-dasharray="7 5" '
+                    f'opacity="{opacity:.3f}"/>'
+                )
+        body.extend(
+            rb_edge_fragment(positions[parent], positions[child], 1.0, False)
+            for parent, child in edges
+        )
+        for key, point in positions.items():
+            opacity = opacities.get(key, 1.0)
+            transition = transitions.get(key)
+            if transition is None:
+                body.append(rb_node(point, key, opacity, red=colors[key]))
+            else:
+                before, after, blend = transition
+                body.append(rb_node(point, key, opacity * (1.0 - blend), red=before))
+                body.append(rb_node(point, key, opacity * blend, red=after))
+        return svg("".join(body), width=width, height=height, color=INK)
+
+    def move(
+        before: Mapping[str, Point],
+        after: Mapping[str, Point],
+        colors: Mapping[str, bool],
+        before_edges: Sequence[tuple[str, str]],
+        after_edges: Sequence[tuple[str, str]],
+        frames: list[str],
+        *,
+        vacant: tuple[Point, float, str] | None = None,
+        steps: int = 42,
+    ) -> None:
+        for step in range(1, steps + 1):
+            t = ease(step / steps)
+            frames.append(scene(
+                {key: lerp_point(before[key], after[key], t) for key in before},
+                colors,
+                before_edges if step <= steps // 2 else after_edges,
+                vacant=vacant,
+            ))
+
+    initial = {
+        "15": (950.0, 105.0), "8": (650.0, 300.0), "18": (1100.0, 300.0),
+        "6": (550.0, 505.0), "9": (750.0, 505.0), "17": (1000.0, 505.0),
+        "27": (1300.0, 300.0), "25": (1200.0, 505.0), "34": (1400.0, 505.0),
+    }
+    colors_initial = {
+        "15": False, "8": False, "18": False, "6": False, "9": False,
+        "17": False, "27": True, "25": False, "34": False,
+    }
+    initial_edges = (
+        ("15", "8"), ("15", "18"), ("8", "6"), ("8", "9"),
+        ("18", "17"), ("18", "27"), ("27", "25"), ("27", "34"),
+    )
+
+    home = dict(initial)
+    home.update({"6": (550.0, 505.0), "8": (650.0, 505.0), "9": (750.0, 505.0)})
+    colors_home = dict(colors_initial)
+    colors_home.update({"6": True, "9": True})
+    home_edges = (
+        ("15", "18"), ("8", "6"), ("8", "9"),
+        ("18", "17"), ("18", "27"), ("27", "25"), ("27", "34"),
+    )
+    vacant_slot = (initial["8"], 1.0, "15")
+
+    after_delete = dict(home)
+    after_delete.pop("9")
+    colors_delete = {key: value for key, value in colors_home.items() if key != "9"}
+    delete_edges = tuple(edge for edge in home_edges if "9" not in edge)
+
+    colors_conflict = dict(colors_delete)
+    colors_conflict["18"] = True
+
+    merge = {
+        "15": (650.0, 300.0), "18": (850.0, 300.0), "27": (1050.0, 300.0),
+        "8": (650.0, 505.0), "6": (550.0, 505.0), "17": (800.0, 505.0),
+        "25": (950.0, 505.0), "34": (1150.0, 505.0),
+    }
+    merge_edges = (
+        ("15", "18"), ("18", "27"), ("8", "6"),
+        ("15", "8"), ("18", "17"), ("27", "25"), ("27", "34"),
+    )
+    colors_merged = dict(colors_conflict)
+    colors_merged.update({"15": True, "18": False, "27": True})
+
+    promoted = {
+        "18": (950.0, 105.0), "15": (700.0, 320.0), "27": (1200.0, 320.0),
+        "8": (700.0, 535.0), "6": (600.0, 535.0), "17": (900.0, 535.0),
+        "25": (1100.0, 535.0), "34": (1300.0, 535.0),
+    }
+    promoted_edges = (
+        ("18", "15"), ("18", "27"), ("15", "8"), ("15", "17"),
+        ("8", "6"), ("27", "25"), ("27", "34"),
+    )
+    colors_re_elected = dict(colors_merged)
+    colors_re_elected.update({"15": False, "18": True, "27": False})
+    colors_final = dict(colors_re_elected)
+    colors_final["18"] = False
+
+    frames: list[str] = [scene(initial, colors_initial, initial_edges)] * 30
+    move(
+        initial, home, colors_initial, initial_edges, home_edges, frames,
+        vacant=(initial["8"], 1.0, "15"),
+    )
+    for step in range(1, 25):
+        t = ease(step / 24.0)
+        frames.append(scene(
+            home,
+            colors_home,
+            home_edges,
+            transitions={key: (colors_initial[key], colors_home[key], t) for key in ("6", "9")},
+            vacant=vacant_slot,
+        ))
+    frames.extend([scene(home, colors_home, home_edges, vacant=vacant_slot)] * 24)
+
+    for step in range(1, 20):
+        t = ease(step / 19.0)
+        frames.append(scene(
+            home,
+            colors_home,
+            home_edges,
+            opacities={"9": 1.0 - t},
+            vacant=vacant_slot,
+        ))
+    frames.extend([scene(after_delete, colors_delete, delete_edges, vacant=vacant_slot)] * 24)
+
+    # The dashed former 8 slot and the 18/27 group pull 15 home together;
+    # 18 turns red during the same motion, not as a separate earlier step.
+    for step in range(1, 43):
+        t = ease(step / 42.0)
+        positions = {key: lerp_point(after_delete[key], merge[key], t) for key in after_delete}
+        frames.append(scene(
+            positions,
+            colors_conflict,
+            delete_edges if step <= 21 else merge_edges,
+            transitions={"18": (False, True, t)},
+            vacant=(initial["8"], 1.0 - t, "15"),
+        ))
+    frames.extend([scene(merge, colors_conflict, merge_edges)] * 18)
+
+    # The merged three-key group settles into its red-black encoding.
+    for step in range(1, 25):
+        t = ease(step / 24.0)
+        frames.append(scene(
+            merge,
+            colors_merged,
+            merge_edges,
+            transitions={
+                key: (colors_conflict[key], colors_merged[key], t)
+                for key in ("15", "18")
+            },
+        ))
+    frames.extend([scene(merge, colors_merged, merge_edges)] * 18)
+
+    # 15 is red now, so 17 belongs to 15's side: its relation moves from
+    # 18 to 15 before any promotion happens.
+    settled = dict(merge)
+    settled["17"] = (740.0, 505.0)
+    settled_edges = (
+        ("15", "18"), ("18", "27"), ("8", "6"),
+        ("15", "8"), ("15", "17"), ("27", "25"), ("27", "34"),
+    )
+    for step in range(1, 31):
+        t = ease(step / 30.0)
+        positions = dict(merge)
+        positions["17"] = lerp_point(merge["17"], settled["17"], t)
+        frames.append(scene(
+            positions,
+            colors_merged,
+            merge_edges if step <= 15 else settled_edges,
+        ))
+    frames.extend([scene(settled, colors_merged, settled_edges)] * 18)
+
+    # Promotion only: 18 rises to the root while 15 and 27 become its children.
+    move(settled, promoted, colors_merged, settled_edges, promoted_edges, frames)
+    frames.extend([scene(promoted, colors_merged, promoted_edges)] * 18)
+    for colors, before, steps in (
+        (colors_re_elected, colors_merged, 24),
+        (colors_final, colors_re_elected, 20),
+    ):
+        for step in range(1, steps + 1):
+            t = ease(step / steps)
+            frames.append(scene(
+                promoted,
+                colors,
+                promoted_edges,
+                transitions={
+                    key: (before[key], colors[key], t)
+                    for key in promoted
+                    if before[key] != colors[key]
+                },
+            ))
+        frames.extend([scene(promoted, colors, promoted_edges)] * 20)
+    frames.extend([scene(promoted, colors_final, promoted_edges)] * 90)
+    render_webm("rb-delete-case3-btree", frames, fps=30, transparent=True, crop_pad=24)
+
+
+def rb_delete_case5_btree() -> None:
+    """Show the red-sibling repair as a red-black-styled B-tree layout."""
+    width, height = 1500, 720
+
+    def scene(
+        positions: Mapping[str, Point],
+        colors: Mapping[str, bool],
+        edges: Sequence[tuple[str, str]],
+        *,
+        opacities: Mapping[str, float] | None = None,
+        edge_opacities: Mapping[tuple[str, str], float] | None = None,
+        transitions: Mapping[str, tuple[bool, bool, float]] | None = None,
+    ) -> str:
+        opacities = opacities or {}
+        edge_opacities = edge_opacities or {}
+        transitions = transitions or {}
+        body: list[str] = []
+        body.extend(
+            rb_edge_fragment(
+                positions[parent],
+                positions[child],
+                edge_opacities.get((parent, child), 1.0),
+                False,
+            )
+            for parent, child in edges
+            if parent in positions
+            and child in positions
+            and edge_opacities.get((parent, child), 1.0) > 0.0
+        )
+        for key, point in positions.items():
+            opacity = opacities.get(key, 1.0)
+            transition = transitions.get(key)
+            if transition is None:
+                body.append(rb_node(point, key, opacity, red=colors[key]))
+                continue
+            before, after, blend = transition
+            body.append(rb_node(point, key, opacity * (1.0 - blend), red=before))
+            body.append(rb_node(point, key, opacity * blend, red=after))
+        return svg("".join(body), width=width, height=height, color=INK)
+
+    # Initial legal red-sibling configuration from the matching red-black clip.
+    initial = {
+        "18": (750.0, 130.0),
+        "15": (500.0, 350.0),
+        "27": (1000.0, 350.0),
+        "9": (390.0, 565.0),
+        "17": (610.0, 565.0),
+    }
+    initial_colors = {"18": False, "15": True, "27": False, "9": False, "17": False}
+    first_colors = {"18": True, "15": False, "27": False, "9": False, "17": False}
+    initial_edges = (("18", "15"), ("18", "27"), ("15", "9"), ("15", "17"))
+    rewired_edges = (("18", "15"), ("18", "27"), ("15", "9"), ("18", "17"))
+
+    # Once 17 is on 18's side, the B-tree member row is [15, 18, 27].
+    row = {
+        "15": (500.0, 350.0),
+        "18": (750.0, 350.0),
+        "27": (1000.0, 350.0),
+        "9": (390.0, 565.0),
+        "17": (750.0, 565.0),
+    }
+    row_edges = (("15", "18"), ("18", "27"), ("15", "9"), ("18", "17"))
+    pulled_colors = {"18": False, "15": False, "27": True, "9": False, "17": True}
+    frames: list[str] = [scene(initial, initial_colors, initial_edges)] * 30
+
+    # First handoff is only a red-black recolouring: 18 red, 15 black.
+    for step in range(1, 25):
+        t = ease(step / 24.0)
+        frames.append(scene(
+            initial,
+            first_colors,
+            initial_edges,
+            transitions={
+                "18": (False, True, t),
+                "15": (True, False, t),
+            },
+        ))
+    frames.extend([scene(initial, first_colors, initial_edges)] * 18)
+
+    # 17 changes parent from 15 to 18 without moving any cargo node.
+    for step in range(1, 31):
+        t = ease(step / 30.0)
+        frames.append(scene(
+            initial,
+            first_colors,
+            initial_edges + (("18", "17"),),
+            edge_opacities={
+                ("15", "17"): 1.0 - t,
+                ("18", "17"): t,
+            },
+        ))
+    frames.extend([scene(initial, first_colors, rewired_edges)] * 18)
+
+    # Pull 18 back into the same B-tree member row. The old tree edges hand
+    # over to the row edges while the key and the cargo stay continuous.
+    for step in range(1, 49):
+        t = ease(step / 48.0)
+        positions = {
+            key: lerp_point(initial[key], row[key], t)
+            for key in initial
+        }
+        edges = rewired_edges if step <= 24 else row_edges
+        edge_opacities = {
+            edge: 1.0 - t for edge in rewired_edges if edge not in row_edges
+        }
+        edge_opacities.update({
+            edge: t for edge in row_edges if edge not in rewired_edges
+        })
+        edge_opacities.update({
+            edge: 1.0 for edge in set(rewired_edges) & set(row_edges)
+        })
+        frames.append(scene(
+            positions,
+            first_colors,
+            edges,
+            edge_opacities=edge_opacities,
+        ))
+    frames.extend([scene(row, first_colors, row_edges)] * 18)
+
+    # After 18 arrives home, it becomes black and 17/27 become red together.
+    for step in range(1, 25):
+        t = ease(step / 24.0)
+        frames.append(scene(
+            row,
+            pulled_colors,
+            row_edges,
+            transitions={
+                "18": (True, False, t),
+                "17": (False, True, t),
+                "27": (False, True, t),
+            },
+        ))
+    frames.extend([scene(row, pulled_colors, row_edges)] * 18)
+
+    # Delete the now-red 27 completely.
+    for step in range(1, 25):
+        t = ease(step / 24.0)
+        frames.append(scene(
+            row,
+            pulled_colors,
+            row_edges,
+            opacities={"27": 1.0 - t},
+            edge_opacities={("18", "27"): 1.0 - t},
+        ))
+    final = {key: point for key, point in row.items() if key != "27"}
+    final_colors = {key: value for key, value in pulled_colors.items() if key != "27"}
+    final_edges = tuple(edge for edge in row_edges if "27" not in edge)
+    frames.extend([scene(final, final_colors, final_edges)] * 60)
+    render_webm("rb-delete-case5-btree", frames, fps=30, transparent=True, crop_pad=24)
+
+
+def rb_delete_case4_btree() -> None:
+    """Show case four as B-tree member folding with red-black square nodes."""
+    width, height = 1364, 932
+
+    def scene(
+        positions: Mapping[str, Point],
+        colors: Mapping[str, bool],
+        edges: Sequence[tuple[str, str]],
+        *,
+        opacities: Mapping[str, float] | None = None,
+        edge_opacities: Mapping[tuple[str, str], float] | None = None,
+        transitions: Mapping[str, tuple[bool, bool, float]] | None = None,
+    ) -> str:
+        opacities = opacities or {}
+        edge_opacities = edge_opacities or {}
+        transitions = transitions or {}
+        body = "".join(
+            rb_edge_fragment(
+                positions[parent],
+                positions[child],
+                edge_opacities.get((parent, child), 1.0),
+                False,
+            )
+            for parent, child in edges
+            if edge_opacities.get((parent, child), 1.0) > 0.0
+        )
+        for key, point in positions.items():
+            opacity = opacities.get(key, 1.0)
+            transition = transitions.get(key)
+            if transition is None:
+                body += rb_node(point, key, opacity, red=colors[key])
+            else:
+                before, after, blend = transition
+                body += rb_node(point, key, opacity * (1.0 - blend), red=before)
+                body += rb_node(point, key, opacity * blend, red=after)
+        return svg(body, width=width, height=height, color=INK)
+
+    initial = {
+        "10": (682.0, 130.0),
+        "4": (380.0, 390.0),
+        "25": (984.0, 390.0),
+        "17": (850.0, 680.0),
+        "28": (1110.0, 680.0),
+    }
+    folded = {
+        "10": (570.0, 140.0),
+        "25": (750.0, 140.0),
+        "4": (350.0, 450.0),
+        "17": (700.0, 450.0),
+        "28": (1000.0, 450.0),
+    }
+    initial_colors = {"10": False, "4": False, "25": True, "17": False, "28": False}
+    member_colors = {"10": False, "4": False, "25": False, "17": True, "28": True}
+    initial_edges = (("10", "4"), ("10", "25"), ("25", "17"), ("25", "28"))
+    folded_edges = initial_edges
+    frames: list[str] = [scene(initial, initial_colors, initial_edges)] * 30
+
+    # Fold the red 25 into the root's member row; no repair rotation occurs.
+    for step in range(1, 43):
+        t = ease(step / 42.0)
+        frames.append(scene(
+            {key: lerp_point(initial[key], folded[key], t) for key in initial},
+            initial_colors,
+            folded_edges,
+        ))
+    frames.extend([scene(folded, initial_colors, folded_edges)] * 24)
+
+    # Recolour the member row in place: 25 becomes black while 17 and 28
+    # become red. There is no second downward move in this case.
+    for step in range(1, 25):
+        t = ease(step / 24.0)
+        frames.append(scene(
+            folded,
+            member_colors,
+            folded_edges,
+            transitions={
+                key: (initial_colors[key], member_colors[key], t)
+                for key in ("25", "17", "28")
+            },
+        ))
+    frames.extend([scene(folded, member_colors, folded_edges)] * 24)
+
+    # Delete the red 28 in place; it leaves no ghost or rotation artifact.
+    for step in range(1, 25):
+        t = ease(step / 24.0)
+        frames.append(scene(
+            folded,
+            member_colors,
+            folded_edges,
+            opacities={"28": 1.0 - t},
+            edge_opacities={("25", "28"): 1.0 - t},
+        ))
+    remaining = {key: point for key, point in folded.items() if key != "28"}
+    remaining_colors = {key: value for key, value in member_colors.items() if key != "28"}
+    remaining_edges = tuple(edge for edge in folded_edges if "28" not in edge)
+    frames.extend([scene(remaining, remaining_colors, remaining_edges)] * 90)
+    render_webm("rb-delete-case4-btree", frames, fps=30, transparent=True, crop_pad=24)
 
 
 def btree_merge_legacy() -> None:
@@ -5094,6 +6693,7 @@ def btree_delete_complex_frames(
     output_height: int = 0,
     view_width: int = 0,
     camera_keyframes: Sequence[tuple[int, float]] = (),
+    traditional: bool = False,
 ) -> list[str]:
     """Render successor replacement plus pull-down merge deletions for the given order."""
     global CELL_W, CELL_H, BTREE_NEON_CELL_W, BTREE_NEON_CELL_H
@@ -5240,6 +6840,53 @@ def btree_delete_complex_frames(
             orange_keys=swap_orange,
         ))
 
+    def delete_leaf_traditional(key: int, *, sibling_side: str) -> None:
+        """Delete first, then borrow from a sibling or merge only after underflow."""
+        leaf, parent, key_index, child_index = locate_key(root, key)
+        assert leaf.leaf and child_index >= 0
+        if sibling_side == "right":
+            sibling_index = child_index + 1
+            pivot_index = child_index
+        else:
+            sibling_index = child_index - 1
+            pivot_index = child_index - 1
+        sibling = parent.children[sibling_index]
+        pivot = parent.keys[pivot_index]
+        before_state = clone(root)
+        leaf.keys.pop(key_index)
+
+        borrowed: int | None = None
+        if len(leaf.keys) >= min_keys:
+            kind = "traditional_delete"
+        elif len(sibling.keys) > min_keys:
+            kind = "traditional_borrow"
+            if sibling_side == "right":
+                borrowed = sibling.keys.pop(0)
+                leaf.keys.append(pivot)
+            else:
+                borrowed = sibling.keys.pop()
+                leaf.keys.insert(0, pivot)
+            parent.keys[pivot_index] = borrowed
+        else:
+            kind = "traditional_merge"
+            leaf.keys = sorted([*leaf.keys, pivot, *sibling.keys])
+            parent.keys.pop(pivot_index)
+            parent.children.pop(sibling_index)
+
+        events.append(Event(
+            before_state,
+            clone(root),
+            kind,
+            key=key,
+            replacement=borrowed,
+            parent_id=parent.node_id,
+            target_child_id=leaf.node_id,
+            sibling_id=sibling.node_id,
+            pivot=pivot,
+            pivot_index=pivot_index,
+            orange_keys=swap_orange,
+        ))
+
     for op in ops:
         if op[0] == "replace":
             _, target_key, replacement = op
@@ -5264,7 +6911,10 @@ def btree_delete_complex_frames(
                 orange_keys=swap_orange,
             ))
         elif op[0] == "delete_leaf":
-            delete_leaf(op[1], sibling_side=op[2])
+            if traditional:
+                delete_leaf_traditional(op[1], sibling_side=op[2])
+            else:
+                delete_leaf(op[1], sibling_side=op[2])
         elif op[0] == "merge_internal":
             *path, target_index, sibling_index = op[1:]
             parent_node = root
@@ -5440,6 +7090,89 @@ def btree_delete_complex_frames(
         rows = [(keys, cell_slots(center, len(keys))) for keys, center in groups.values()]
         edges = [link_segment(groups, links, parent, child) for parent, child in links]
         return rows_svg(rows, edges, orange_keys=orange_keys, red_rows=red_row_indices(groups, tree.node_id))
+
+    def render_tree_marked(
+        tree: Node,
+        *,
+        red_ids: Collection[int] = (),
+        focus_ids: Collection[int] = (),
+    ) -> str:
+        groups, links = layout(tree)
+        red = set(red_ids)
+        focus = set(focus_ids)
+        body = [
+            edge(*link_segment(groups, links, parent, child))
+            for parent, child in links
+        ]
+        for node_id, (keys, center) in groups.items():
+            rim = GLOW_RED if node_id in red else GLOW_ORANGE if node_id in focus else None
+            body.append(btree_neon_row_at_positions(
+                tuple(str(key) for key in keys),
+                cell_slots(center, len(keys)),
+                rim=rim,
+                font_size=_fsz,
+            ))
+        return svg("".join(body), width=_out_w, height=_out_h, color=INK,
+                   view_box=f"{_x_off[0]:.1f} {_view_y[0]:.1f} {_view_w[0]:.1f} {_out_h}")
+
+    def tween_trees(before: Node, after: Node, progress: float) -> str:
+        """Move every surviving key and semantic edge between two tree states."""
+        before_groups, before_links = layout(before)
+        after_groups, after_links = layout(after)
+
+        def key_points(groups: Mapping[int, tuple[tuple[int, ...], Point]]) -> dict[int, Point]:
+            return {
+                key: point
+                for keys, center in groups.values()
+                for key, point in zip(keys, cell_slots(center, len(keys)), strict=True)
+            }
+
+        before_points = key_points(before_groups)
+        after_points = key_points(after_groups)
+        before_segments = {
+            (parent, child): link_segment(before_groups, before_links, parent, child)
+            for parent, child in before_links
+        }
+        after_segments = {
+            (parent, child): link_segment(after_groups, after_links, parent, child)
+            for parent, child in after_links
+        }
+        body: list[str] = []
+        for relation in before_segments.keys() | after_segments.keys():
+            old = before_segments.get(relation)
+            new = after_segments.get(relation)
+            if old is not None and new is not None:
+                body.append(edge(
+                    lerp_point(old[0], new[0], progress),
+                    lerp_point(old[1], new[1], progress),
+                ))
+            elif old is not None:
+                body.append(edge(old[0], old[1], 1.0 - progress))
+            elif new is not None:
+                body.append(edge(new[0], new[1], progress))
+
+        for key in before_points.keys() | after_points.keys():
+            old = before_points.get(key)
+            new = after_points.get(key)
+            if old is not None and new is not None:
+                point = lerp_point(old, new, progress)
+                opacity = 1.0
+            elif old is not None:
+                point = old
+                opacity = 1.0 - progress
+            else:
+                assert new is not None
+                point = new
+                opacity = progress
+            key_svg = btree_neon_row_at_positions(
+                (str(key),),
+                (point,),
+                text_layers={0: ((str(key), 1.0, GLOW_ORANGE if key in swap_orange else INK),)},
+                font_size=_fsz,
+            )
+            body.append(f'<g opacity="{opacity:.3f}">{key_svg}</g>')
+        return svg("".join(body), width=_out_w, height=_out_h, color=INK,
+                   view_box=f"{_x_off[0]:.1f} {_view_y[0]:.1f} {_view_w[0]:.1f} {_out_h}")
 
     def transition(frames: list[str], event: Event) -> None:
         before_groups, _ = layout(event.before)
@@ -5722,6 +7455,60 @@ def btree_delete_complex_frames(
             frames.extend([rows_svg(landed_rows, landed_edges, orange_keys=event.orange_keys)] * 18)
         transition(frames, event)
 
+    def animate_traditional_leaf_delete(frames: list[str], event: Event) -> None:
+        """Show the traditional order: delete, detect underflow, inspect sibling, repair."""
+        assert event.key is not None and event.target_child_id is not None
+        assert event.sibling_id is not None
+        before_groups, _ = layout(event.before)
+        target_keys, target_center = before_groups[event.target_child_id]
+        strike_point = cell_slots(target_center, len(target_keys))[target_keys.index(event.key)]
+
+        for step in range(1, 19):
+            progress = ease(step / 18.0)
+            slash = glow_line(
+                (strike_point[0] - 22.0, strike_point[1] - 17.0),
+                (strike_point[0] - 22.0 + 44.0 * progress, strike_point[1] - 17.0 + 34.0 * progress),
+                color=GLOW_RED,
+                width=5.0,
+                bloom=GLOW_RED,
+                radius=0.0,
+            )
+            frames.append(render_tree(event.before, orange_keys=event.orange_keys).replace("</svg>", slash + "</svg>"))
+        full_slash = glow_line(
+            (strike_point[0] - 22.0, strike_point[1] - 17.0),
+            (strike_point[0] + 22.0, strike_point[1] + 17.0),
+            color=GLOW_RED,
+            width=5.0,
+            bloom=GLOW_RED,
+            radius=0.0,
+        )
+        frames.extend([render_tree(event.before, orange_keys=event.orange_keys).replace("</svg>", full_slash + "</svg>")] * 8)
+
+        deleted_state = clone(event.before)
+        deleted_target = locate(deleted_state, event.target_child_id)
+        deleted_target.keys.remove(event.key)
+        for step in range(1, 25):
+            frames.append(tween_trees(event.before, deleted_state, ease(step / 24.0)))
+
+        underflow = len(deleted_target.keys) < min_keys
+        for step in range(36):
+            focus_on = (step // 6) % 2 == 0
+            frames.append(render_tree_marked(
+                deleted_state,
+                red_ids=(event.target_child_id,) if underflow else (),
+                focus_ids=(event.sibling_id,) if underflow and focus_on else (),
+            ))
+
+        if event.kind == "traditional_borrow":
+            motion_frames, final_hold = 60, 37
+        elif event.kind == "traditional_merge":
+            motion_frames, final_hold = 48, 31
+        else:
+            motion_frames, final_hold = 24, 55
+        for step in range(1, motion_frames + 1):
+            frames.append(tween_trees(deleted_state, event.after, ease(step / motion_frames)))
+        frames.extend([render_tree(event.after, orange_keys=event.orange_keys)] * final_hold)
+
     def animate_internal_merge(frames: list[str], event: Event) -> None:
         """Pull the root separator down between two internal nodes; the merged node becomes the new root."""
         assert event.pivot is not None and event.pivot_index is not None
@@ -5900,7 +7687,15 @@ def btree_delete_complex_frames(
         if event.kind == "replace":
             animate_replace(frames, event)
         elif event.kind == "internal_merge":
+            if traditional:
+                frames.extend([render_tree_marked(
+                    event.before,
+                    red_ids=(event.parent_id,) if event.parent_id is not None else (),
+                    focus_ids=(event.sibling_id,) if event.sibling_id is not None else (),
+                )] * 36)
             animate_internal_merge(frames, event)
+        elif event.kind.startswith("traditional_"):
+            animate_traditional_leaf_delete(frames, event)
         else:
             animate_leaf_delete(frames, event)
         for _ in range(12):
@@ -5909,37 +7704,37 @@ def btree_delete_complex_frames(
         _prev_cam = curr_cam
         _prev_width = _work_width
     _set_view(_prev_cam, _prev_width)
-    for _ in range(90):
+    for step in range(18):
+        _pan(_prev_cam, _prev_width, _overview_center, _overview_width, step, 18)
+        frames.append(render_tree(events[-1].after, orange_keys=events[-1].orange_keys))
+    _set_view(_overview_center, _overview_width)
+    for _ in range(72):
         frames.append(render_tree(events[-1].after, orange_keys=events[-1].orange_keys))
     CELL_W, CELL_H, BTREE_NEON_CELL_W, BTREE_NEON_CELL_H = _saved_geo
     return frames
 
 
 def btree_delete_5() -> None:
-    """Render every deletion action of the order-5 lesson on one four-level tree."""
+    """Render the traditional order-5 deletion walkthrough on one four-level tree."""
     subtitle_spans: list[tuple[int, int, tuple[str, ...]]] = [
         (0, 36, ("这是一个五阶、四层的 B 树。", "每个节点最多四个关键字，非根节点至少两个。")),
         (36, 48, ("删除内部关键字 450。", "它不是叶节点，先用后继 460 替换它。")),
         (48, 138, ("替换前，450 和 460 先变成橙色。", "450 飞到 460 原来的格子，460 飞到 450 原来的格子。")),
         (138, 181, ("替换结束后，两个数字继续保持橙色。", "原来的 450 转到叶节点，接下来删除这个 450。")),
-        (181, 217, ("删除叶节点中的 450。", "分隔关键字 500 被两个子民拉回去。")),
-        (217, 257, ("原来的位置留下空槽，首领和两个子民之间保持两根线。", "三个部分合并成一个节点：450、480、500、520、540。")),
-        (257, 298, ("划掉并删除 450。", "剩下四个关键字，没有超过容量，不需要推举，直接完成合并。")),
-        (298, 370, ("合并完成，父节点没有下溢。",)),
-        (370, 406, ("接着删除叶节点中的 410。", "分隔关键字 460 被两个子民拉回去。")),
-        (406, 452, ("合并后得到六个关键字，超过五阶节点的容量。",)),
-        (452, 511, ("中间关键字 500 带着两根线向上推举。", "它落回父节点的空槽。")),
-        (511, 577, ("左右两个子节点重新接好。", "推举完成。")),
-        (577, 635, ("现在删除叶节点中的 360。", "分隔关键字 380 被两个子民拉回去。")),
-        (635, 679, ("合并后划掉并删除 360，剩下四个关键字，直接合并。",)),
-        (679, 766, ("父节点交出 380 后，只剩下 [350]。", "关键字数量少于下限，节点下溢，亮起红边。")),
-        (766, 824, ("下溢继续向上传递。", "分隔关键字 300 被两个子民拉回去。")),
-        (824, 842, ("[220,250]、300 和 [350] 合并成一个节点。",)),
-        (842, 896, ("父节点 [200,300] 交出 300 后，只剩 [200]。", "它也下溢了，红边继续保留。")),
-        (896, 954, ("最后处理根节点。", "根的分隔关键字 400 被两个子民拉回去。")),
-        (954, 972, ("[200]、400 和 [600,700] 合并成 [200,400,600,700]。", "合并结果没有超过容量，不需要推举。")),
-        (972, 1026, ("根节点变空，合并节点整体上升成为新根。", "整棵树从四层减少为三层。")),
-        (1026, 1116, ("删除完成：下溢一路传到根，树从四层缩成三层。",)),
+        (181, 243, ("传统方法先直接删除叶节点中的 450。", "节点只剩一个关键字，发生下溢。")),
+        (243, 279, ("检查右兄弟 [520,540]。", "兄弟已在下限，不能借。")),
+        (279, 370, ("借不到，就和分隔关键字 500、右兄弟合并。", "得到 [480,500,520,540]，父节点仍不下溢。")),
+        (370, 432, ("接着直接删除叶节点中的 410。", "节点下溢后检查右兄弟。")),
+        (432, 528, ("右兄弟 [480,500,520,540] 超过下限，可以借。", "分隔关键字 460 下移，兄弟最小关键字 480 上移。")),
+        (528, 577, ("旋转完成：左节点变成 [430,460]。", "父节点分隔关键字更新为 480。")),
+        (577, 639, ("现在直接删除叶节点中的 360。", "节点只剩 [370]，发生下溢。")),
+        (639, 675, ("右兄弟 [390,395] 已在下限，不能借。",)),
+        (675, 766, ("和分隔关键字 380、右兄弟合并。", "父节点 [350,380] 因此只剩 [350]，继续下溢。")),
+        (766, 814, ("检查同层兄弟 [220,250]。", "兄弟也在下限，不能借。")),
+        (814, 932, ("下溢节点和分隔关键字 300、左兄弟合并。", "父节点 [200,300] 只剩 [200]，再次下溢。")),
+        (932, 980, ("检查根下方的右兄弟 [600,700]。", "兄弟在下限，不能借。")),
+        (980, 1098, ("和根分隔关键字 400、右兄弟合并。", "根节点变空，合并节点上升成为新根。")),
+        (1098, 1188, ("传统删除完成：能借时旋转，不能借时合并。", "下溢传到根后，树从四层缩成三层。")),
     ]
 
     tree_frames = btree_delete_complex_frames(
@@ -5973,6 +7768,7 @@ def btree_delete_5() -> None:
         output_width=1920,
         output_height=920,
         view_width=1800,
+        traditional=True,
     )
     total = len(tree_frames)
     video_w, video_h = 1920, 920
@@ -6025,6 +7821,14 @@ def btree_delete_5() -> None:
              "-map", "[out]",
              "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "16",
              "-pix_fmt", "yuv420p", str(final)], check=True)
+        slow = ASSETS / "btree-delete-5-slow.webm"
+        slow.unlink(missing_ok=True)
+        run([
+            "ffmpeg", "-y", "-i", str(final),
+            "-vf", "setpts=PTS/0.6",
+            "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "16",
+            "-pix_fmt", "yuv420p", str(slow),
+        ], check=True)
 
 
 def btree_delete_complex_legacy_v1() -> None:
@@ -6277,8 +8081,17 @@ def btree_merge() -> None:
     )
 
 
-def btree_lend_frames(width: int, height: int, root_c: Point, left_c: Point, right_c: Point, merged_c: Point) -> list[str]:
-    """Unified deletion case two: merge, delete, then promote the sibling's key instead of the old separator."""
+def btree_lend_frames(
+    width: int,
+    height: int,
+    root_c: Point,
+    left_c: Point,
+    right_c: Point,
+    merged_c: Point,
+    *,
+    promoted: str | None = "50",
+) -> list[str]:
+    """Animate leader home, deletion, and either promotion or no promotion."""
 
     def row(keys: Sequence[str], positions: Sequence[Point]) -> str:
         return btree_neon_row_at_positions(keys, positions)
@@ -6312,37 +8125,43 @@ def btree_lend_frames(width: int, height: int, root_c: Point, left_c: Point, rig
 
     ten_slot = cell_slots(left_c, 1)[0]
     forty_slot = cell_slots(root_c, 1)[0]
-    right_three = cell_slots(right_c, 3)
-    merged_five = cell_slots(merged_c, 5)
-    final_left = cell_slots(left_c, 2)
-    final_right = cell_slots(right_c, 1)
+    right_two = cell_slots(right_c, 2)
+    merged_four = cell_slots(merged_c, 4)
     root_one = cell_slots(root_c, 1)[0]
+    remaining_keys = ("40", "50", "60")
+    if promoted not in {None, "50"}:
+        raise ValueError("case-two promotion must be 50 or None")
+    promotion_index = remaining_keys.index(promoted) if promoted is not None else -1
+    final_left_keys = remaining_keys[:promotion_index] if promoted is not None else ()
+    final_right_keys = remaining_keys[promotion_index + 1:] if promoted is not None else ()
+    final_left = cell_slots(left_c, len(final_left_keys)) if final_left_keys else ()
+    final_right = cell_slots(right_c, len(final_right_keys)) if final_right_keys else ()
     frames: list[str] = []
 
     frames.extend([
         render_rows([
             (("10",), (ten_slot,)),
             (("40",), (forty_slot,)),
-            (("50", "60", "70"), right_three),
+            (("50", "60"), right_two),
         ], tree=True)
     ] * 24)
 
-    merge_sources = [(ten_slot,), (forty_slot,), tuple(right_three)]
-    merge_targets = [tuple(merged_five[:1]), tuple(merged_five[1:2]), tuple(merged_five[2:5])]
+    merge_sources = [(ten_slot,), (forty_slot,), tuple(right_two)]
+    merge_targets = [tuple(merged_four[:1]), tuple(merged_four[1:2]), tuple(merged_four[2:4])]
     for step in range(1, 43):
         t = ease(step / 42.0)
         rows = [
             (keys, tuple(lerp_point(source, target, t) for source, target in zip(source_points, target_points)))
             for keys, source_points, target_points in zip(
-                (("10",), ("40",), ("50", "60", "70")),
+                (("10",), ("40",), ("50", "60")),
                 merge_sources,
                 merge_targets,
             )
         ]
         frames.append(render_rows(rows, tree=True))
-    frames.extend([render_rows([(("10", "40", "50", "60", "70"), merged_five)])] * 18)
+    frames.extend([render_rows([(("10", "40", "50", "60"), merged_four)])] * 18)
 
-    ten_point = merged_five[0]
+    ten_point = merged_four[0]
 
     def red_dashed_frame(point: Point, opacity: float) -> str:
         left = point[0] - BTREE_NEON_CELL_W / 2.0 - 5.0
@@ -6355,17 +8174,22 @@ def btree_lend_frames(width: int, height: int, root_c: Point, left_c: Point, rig
         )
 
     for step in range(1, 19):
-        frames.append(render_rows([(("10", "40", "50", "60", "70"), merged_five)], overlay=red_dashed_frame(ten_point, ease(step / 18.0))))
+        frames.append(render_rows([(("10", "40", "50", "60"), merged_four)], overlay=red_dashed_frame(ten_point, ease(step / 18.0))))
     frames.extend([
         render_rows(
-            [(("10", "40", "50", "60", "70"), merged_five)],
+            [(("10", "40", "50", "60"), merged_four)],
             overlay=red_dashed_frame(ten_point, 1.0),
         )
     ] * 8)
 
-    remaining_positions = merged_five[1:]
-    frames.extend([render_rows([(("40", "50", "60", "70"), remaining_positions)])] * 24)
-    frames.extend([render_rows([(("40", "50", "60", "70"), remaining_positions)])] * 18)
+    remaining_positions = merged_four[1:]
+    frames.extend([render_rows([(("40", "50", "60"), remaining_positions)])] * 24)
+    frames.extend([render_rows([(("40", "50", "60"), remaining_positions)])] * 18)
+
+    if promoted is None:
+        final = render_rows([(("40", "50", "60"), remaining_positions)])
+        frames.extend([final] * 90)
+        return frames
 
     split_sources = remaining_positions
     split_targets = tuple(final_left) + (root_one,) + tuple(final_right)
@@ -6376,15 +8200,15 @@ def btree_lend_frames(width: int, height: int, root_c: Point, left_c: Point, rig
             for source, target in zip(split_sources, split_targets)
         )
         rows = [
-            (("40", "50"), positions[:2]),
-            (("60",), (positions[2],)),
-            (("70",), positions[3:]),
+            (final_left_keys, positions[:len(final_left_keys)]),
+            ((promoted,), (positions[len(final_left_keys)],)),
+            (final_right_keys, positions[len(final_left_keys) + 1:]),
         ]
         frames.append(render_rows(rows, tree=True))
     final_rows = [
-        (("40", "50"), final_left),
-        (("60",), (root_one,)),
-        (("70",), final_right),
+        (final_left_keys, final_left),
+        ((promoted,), (root_one,)),
+        (final_right_keys, final_right),
     ]
     frames.extend([render_rows(final_rows, tree=True)] * 90)
     return frames
@@ -6527,6 +8351,52 @@ def btree_side_by_side_frames(
     body.extend([compose(left_final, right_initial, "right")] * pause_frames)
     body.extend([compose(left_final, right, "right") for right in right_frames])
     return body
+
+
+def btree_parallel_grid_frames(
+    takes: Sequence[Sequence[str]],
+    *,
+    panel_width: int,
+    panel_height: int,
+    titles: Sequence[str],
+    columns: int = 4,
+) -> list[str]:
+    """Play several complete takes in parallel, with at most two grid rows."""
+    if not takes or len(takes) != len(titles):
+        raise ValueError("every parallel take needs one title")
+    if not 1 <= columns <= 4:
+        raise ValueError("parallel grids support one to four columns")
+    if len(takes) > columns * 2:
+        raise ValueError("parallel grids support at most two rows")
+    if any(not take for take in takes):
+        raise ValueError("parallel takes need at least one frame")
+
+    rows = (len(takes) + columns - 1) // columns
+    frame_count = max(len(take) for take in takes)
+
+    def panel_body(frame: str, x: int, y: int, title: str) -> str:
+        start = frame.find(">")
+        end = frame.rfind("</svg>")
+        if start < 0 or end < start:
+            raise ValueError("expected a complete SVG frame")
+        return (
+            f'<svg x="{x}" y="{y}" width="{panel_width}" height="{panel_height}" '
+            f'viewBox="0 0 {panel_width} {panel_height}">'
+            f'{frame[start + 1:end]}'
+            f'{neon_text(title, (panel_width / 2.0, 28.0), size=24.0, glow=GLOW_BLUE)}'
+            "</svg>"
+        )
+
+    frames: list[str] = []
+    for index in range(frame_count):
+        parts: list[str] = []
+        for take_index, (take, title) in enumerate(zip(takes, titles, strict=True)):
+            frame = take[min(index, len(take) - 1)]
+            x = (take_index % columns) * panel_width
+            y = (take_index // columns) * panel_height
+            parts.append(panel_body(frame, x, y, title))
+        frames.append(svg("".join(parts), width=columns * panel_width, height=rows * panel_height + 70, color=INK))
+    return frames
 
 
 def btree_cascade_merge_frames(width: int, height: int) -> list[str]:
@@ -7577,7 +9447,7 @@ def btree_classic_lend_frames(
     right_c: Point,
     captions: Mapping[str, str] | None = None,
 ) -> list[str]:
-    """Traditional deletion case two: the sibling can lend, so one key rises while the separator sinks."""
+    """Traditional deletion case two: borrow 50, then sink separator 40."""
 
     def caption(phase: str) -> str:
         if not captions or phase not in captions:
@@ -7625,13 +9495,13 @@ def btree_classic_lend_frames(
     ten_slot = cell_slots(left_c, 1)[0]
     root_one = cell_slots(root_c, 1)[0]
     root_two = cell_slots(root_c, 2)
-    right_three = cell_slots(right_c, 3)
     right_two = cell_slots(right_c, 2)
+    right_one = cell_slots(right_c, 1)
     child_tops = ((left_c[0], left_c[1] - BTREE_NEON_CELL_H / 2.0), (right_c[0], right_c[1] - BTREE_NEON_CELL_H / 2.0))
     pulse = (0.35, 0.55, 0.8, 0.55)
     frames: list[str] = []
 
-    initial_body = edges(root_c[0], child_tops) + row(("10",), (ten_slot,)) + row(("40",), (root_one,)) + row(("50", "60", "70"), right_three)
+    initial_body = edges(root_c[0], child_tops) + row(("10",), (ten_slot,)) + row(("40",), (root_one,)) + row(("50", "60"), right_two)
     frames.extend([svg(initial_body, width=width, height=height, color=INK)] * 24)
 
     for step in range(1, 19):
@@ -7639,27 +9509,26 @@ def btree_classic_lend_frames(
     frames.extend([svg(initial_body + strike_at(ten_slot, 1.0) + caption("slash"), width=width, height=height, color=INK)] * 8)
 
     for step in range(12):
-        body = edges(root_c[0], child_tops) + ghost_cell(ten_slot, (step + 1) / 12.0) + row(("40",), (root_one,)) + row(("50", "60", "70"), right_three)
+        body = edges(root_c[0], child_tops) + ghost_cell(ten_slot, (step + 1) / 12.0) + row(("40",), (root_one,)) + row(("50", "60"), right_two)
         frames.append(svg(body + caption("slash"), width=width, height=height, color=INK))
-    hungry_body = edges(root_c[0], child_tops) + ghost_cell(ten_slot, 1.0) + row(("40",), (root_one,)) + row(("50", "60", "70"), right_three)
+    hungry_body = edges(root_c[0], child_tops) + ghost_cell(ten_slot, 1.0) + row(("40",), (root_one,)) + row(("50", "60"), right_two)
     frames.extend([svg(hungry_body + caption("slash"), width=width, height=height, color=INK)] * 12)
 
     for step in range(36):
-        body = hungry_body + ring(right_three, pulse[(step // 3) % 4]) + caption("ring")
+        body = hungry_body + ring(right_two, pulse[(step // 3) % 4]) + caption("ring")
         frames.append(svg(body, width=width, height=height, color=INK))
 
     for step in range(1, 37):
         t = ease(step / 36.0)
-        fifty = lerp_point(right_three[0], root_two[1], t)
+        fifty = lerp_point(right_two[0], root_two[1], t)
         forty = lerp_point(root_one, root_two[0], t)
-        sixty = lerp_point(right_three[1], right_two[0], t)
-        seventy = lerp_point(right_three[2], right_two[1], t)
+        sixty = lerp_point(right_two[1], right_one[0], t)
         body = (
             edges(root_c[0], child_tops)
             + ghost_cell(ten_slot, 1.0)
             + row(("40",), (forty,))
             + row(("50",), (fifty,))
-            + row(("60", "70"), (sixty, seventy))
+            + row(("60",), (sixty,))
             + caption("rise")
         )
         frames.append(svg(body, width=width, height=height, color=INK))
@@ -7674,12 +9543,12 @@ def btree_classic_lend_frames(
             + ghost_cell(ten_slot, ghost_opacity)
             + row(("40",), (forty,))
             + row(("50",), (fifty,))
-            + row(("60", "70"), right_two)
+            + row(("60",), right_one)
             + caption("sink")
         )
         frames.append(svg(body, width=width, height=height, color=INK))
 
-    final_body = edges(root_c[0], child_tops) + row(("40",), (ten_slot,)) + row(("50",), (root_one,)) + row(("60", "70"), right_two)
+    final_body = edges(root_c[0], child_tops) + row(("40",), (ten_slot,)) + row(("50",), (root_one,)) + row(("60",), right_one)
     frames.extend([svg(final_body + caption("sink"), width=width, height=height, color=INK)] * 90)
     return frames
 
@@ -7812,45 +9681,57 @@ def btree_classic_merge() -> None:
     )
 
 
-def btree_case1_compare() -> None:
-    """Play the unified and traditional takes of deletion case one side by side."""
+def btree_case1_split() -> None:
+    """Render case one as separate traditional and exhaustive unified videos."""
     width, height = 1100, 660
-    left_frames = btree_borrow_frames(width, height, (550.0, 120.0), (300.0, 370.0), (820.0, 370.0), (550.0, 370.0))
-    right_frames = btree_classic_plain_frames(width, height, (550.0, 120.0), (300.0, 370.0), (820.0, 370.0), captions={
+    traditional = btree_classic_plain_frames(width, height, (550.0, 120.0), (300.0, 370.0), (820.0, 370.0), captions={
         "slash": "直接在叶节点里删掉 10",
         "settled": "剩 20、30，没有下溢",
         "final": "不用借也不用合，结束",
     })
-    frames = btree_side_by_side_frames(
-        left_frames,
-        right_frames,
-        panel_width=width,
-        height=height,
-        left_title="我们的方法",
-        right_title="传统方法",
+    unified = [
+        btree_borrow_frames(
+            width, height, (550.0, 120.0), (300.0, 370.0),
+            (820.0, 370.0), (550.0, 370.0), promoted=promoted,
+        )
+        for promoted in ("30", "40", "60")
+    ]
+    render_webm("btree-case1-traditional", traditional, fps=30, transparent=True)
+    render_webm(
+        "btree-case1-ours",
+        btree_parallel_grid_frames(
+            unified, panel_width=width, panel_height=height,
+            titles=("推举 30", "推举 40", "推举 60"), columns=3,
+        ),
+        fps=30, transparent=True, crop_pad=60,
     )
-    render_webm("btree-case1-compare", frames, fps=24, transparent=True, crop_pad=60)
 
 
-def btree_case2_compare() -> None:
-    """Play the unified and traditional takes of deletion case two side by side."""
+def btree_case2_split() -> None:
+    """Render case two as separate traditional and exhaustive unified videos."""
     width, height = 1100, 660
-    left_frames = btree_lend_frames(width, height, (550.0, 120.0), (300.0, 370.0), (820.0, 370.0), (550.0, 370.0))
-    right_frames = btree_classic_lend_frames(width, height, (550.0, 120.0), (300.0, 370.0), (820.0, 370.0), captions={
+    traditional = btree_classic_lend_frames(width, height, (550.0, 120.0), (300.0, 370.0), (820.0, 370.0), captions={
         "slash": "删掉 10，左叶空了——下溢",
-        "ring": "看兄弟：50、60、70，够借",
+        "ring": "看兄弟：50、60，够借",
         "rise": "借位：50 升入父节点",
         "sink": "40 下沉补上空位，借位完成",
     })
-    frames = btree_side_by_side_frames(
-        left_frames,
-        right_frames,
-        panel_width=width,
-        height=height,
-        left_title="我们的方法",
-        right_title="传统方法",
+    unified = [
+        btree_lend_frames(
+            width, height, (550.0, 120.0), (300.0, 370.0),
+            (820.0, 370.0), (550.0, 370.0), promoted=promoted,
+        )
+        for promoted in ("50", None)
+    ]
+    render_webm("btree-case2-traditional", traditional, fps=30, transparent=True)
+    render_webm(
+        "btree-case2-ours",
+        btree_parallel_grid_frames(
+            unified, panel_width=width, panel_height=height,
+            titles=("推举 50", "不推举"), columns=2,
+        ),
+        fps=30, transparent=True, crop_pad=60,
     )
-    render_webm("btree-case2-compare", frames, fps=24, transparent=True, crop_pad=60)
 
 
 def _btree_cascade_two_deletes_frames_legacy_v3(width: int, height: int, *, traditional: bool) -> list[str]:
@@ -9257,7 +11138,8 @@ def _btree_case3_frames_red_legacy(width: int, height: int, *, traditional: bool
                 parts.append(btree_neon_row_at_positions(node_row[0], node_row[1], rim=node_row[2]))
                 if row_id in selected_map:
                     parts.append(red_frame(node_row, float(selected_map[row_id])))
-        parts.append(neon_text(caption, (width / 2.0, height - 58.0), size=22.0, glow=GLOW_BLUE))
+        # Keep captions clear of the browser's bottom video controls.
+        parts.append(neon_text(caption, (width / 2.0, height - 96.0), size=22.0, glow=GLOW_BLUE))
         return svg("".join(parts), width=width, height=height, color=INK)
 
     root = row(("50", "80"), root_point)
@@ -9393,8 +11275,16 @@ def _btree_case3_frames_red_legacy(width: int, height: int, *, traditional: bool
     return frames
 
 
-def _btree_case3_frames_semantic(width: int, height: int, *, traditional: bool) -> list[str]:
+def _btree_case3_frames_semantic(
+    width: int,
+    height: int,
+    *,
+    traditional: bool,
+    upper_home: str = "50",
+) -> list[str]:
     """Render case three with underflow marks that follow the unresolved problem."""
+    if upper_home not in {"50", "80"}:
+        raise ValueError("case-three upper leader must be 50 or 80")
     root_point = (550.0, 100.0)
     parent_points = {
         "left": (220.0, 285.0),
@@ -9511,7 +11401,7 @@ def _btree_case3_frames_semantic(width: int, height: int, *, traditional: bool) 
         parts.append(extra)
         for row_id, node_row in rows.items():
             if row_id in ghost_opacity or all(key is None for key in node_row[0]):
-                if traditional:
+                if traditional and row_id not in ghost_opacity:
                     continue
                 parts.append(ghost(node_row, float(ghost_opacity.get(row_id, 1.0))))
             else:
@@ -9560,6 +11450,7 @@ def _btree_case3_frames_semantic(width: int, height: int, *, traditional: bool) 
     pair_left = (left_trio[1], left_trio[2])
     parent_target = cell_slots(parent_merge, 2)
     root80_row = row(("80",), positions=(root[1][1],))
+    root50_row = row(("50",), positions=(root[1][0],))
     empty70 = empty(leaves["70"])
 
     if traditional:
@@ -9571,6 +11462,7 @@ def _btree_case3_frames_semantic(width: int, height: int, *, traditional: bool) 
             moving = dict(after_delete)
             moving["sep60"] = move(middle, trio_slots[1], progress)
             moving["sibling55"] = move(leaves["55"], trio_slots[0], progress)
+            moving["middle_slot"] = empty(middle)
             moving.pop("middle", None)
             moving.pop("55", None)
             moving.pop("70", None)
@@ -9580,19 +11472,19 @@ def _btree_case3_frames_semantic(width: int, height: int, *, traditional: bool) 
                 ("left", "10", 0), ("left", "30", 1),
                 ("right", "90", 0), ("right", "110", 1),
             )
-            frames.append(draw(moving, links, "兄弟不能借，分隔键 60 下沉，与 55 合并"))
+            frames.append(draw(moving, links, "兄弟不能借，分隔键 60 下沉，与 55 合并", ghosts=("middle_slot",)))
         merged_mid = row(("55", "60"), positions=pair_mid)
         state = {
-            "root": root, "left": left, "right": right, "merged_mid": merged_mid,
+            "root": root, "left": left, "right": right, "middle_slot": empty(middle), "merged_mid": merged_mid,
             "10": leaves["10"], "30": leaves["30"],
             "90": leaves["90"], "110": leaves["110"],
         }
         links = (
-            ("root", "left", 0), ("root", "right", 2),
+            ("root", "left", 0), ("root", "merged_mid", 1), ("root", "right", 2),
             ("left", "10", 0), ("left", "30", 1),
             ("right", "90", 0), ("right", "110", 1),
         )
-        frames.extend([draw(state, links, "叶层合并完成，中间内部槽位下溢")] * 18)
+        frames.extend([draw(state, links, "叶层合并完成，中间内部槽位下溢", ghosts=("middle_slot",))] * 18)
         for step in range(1, 61):
             progress = ease(step / 60.0)
             moving = dict(state)
@@ -9607,7 +11499,7 @@ def _btree_case3_frames_semantic(width: int, height: int, *, traditional: bool) 
                 ("sibling20", "10", 0), ("sibling20", "30", 1),
                 ("right", "90", 0), ("right", "110", 1),
             )
-            frames.append(draw(moving, links, "内部下溢，分隔键 50 下沉，与 20 合并"))
+            frames.append(draw(moving, links, "内部下溢，分隔键 50 下沉，与 20 合并", ghosts=("middle_slot",)))
         state = {
             "root": root80_row, "parent": row(("20", "50"), positions=parent_target),
             "merged_mid": merged_mid,
@@ -9691,93 +11583,242 @@ def _btree_case3_frames_semantic(width: int, height: int, *, traditional: bool) 
         "trio": merged_mid, "10": leaves["10"], "30": leaves["30"],
         "90": leaves["90"], "110": leaves["110"],
     }
+    links = (
+        ("root", "left", 0), ("root", "middle_slot", 1), ("root", "right", 2),
+        ("left", "10", 0), ("left", "30", 1),
+        ("right", "90", 0), ("right", "110", 1),
+    )
     frames.extend([draw(state, links, "删除 70，[60] 原槽位下溢")] * 18)
-    root50_slot = row((None,), positions=(root[1][0],))
-    for step in range(1, 61):
-        progress = ease(step / 60.0)
-        moving = dict(state)
-        moving["root80"] = root80_row
-        moving["root50_slot"] = root50_slot
-        moving["moving50"] = move(row(("50",), positions=(root[1][0],)), parent_target[1], progress)
-        moving["moving20"] = move(left, parent_target[0], progress)
-        moving["middle_slot"] = move(empty(middle), parent_target[1], progress)
-        moving.pop("root", None)
-        moving.pop("left", None)
+    if upper_home == "50":
+        root_home = root80_row
+        root_other = root50_row
+        home_caption = "空槽与 20 把 50 拉回同一层"
+        final_parent_keys = ("20", "50")
+        root50_slot = row((None,), positions=(root[1][0],))
+        for step in range(1, 61):
+            progress = ease(step / 60.0)
+            moving = dict(state)
+            moving["root80"] = root80_row
+            moving["root50_slot"] = root50_slot
+            moving["moving50"] = move(root_other, parent_target[1], progress)
+            moving["moving20"] = move(left, parent_target[0], progress)
+            moving["middle_slot"] = move(empty(middle), parent_target[1], progress)
+            moving.pop("root", None)
+            moving.pop("left", None)
+            links = (
+                ("root80", "right", 1),
+                ("moving50", "moving20", 0), ("moving50", "middle_slot", 1),
+                ("moving20", "10", 0), ("moving20", "30", 1),
+                ("right", "90", 0), ("right", "110", 1),
+            )
+            frames.append(draw(moving, links, home_caption))
+        state = {
+            "root": root_home, "parent": row(final_parent_keys, positions=parent_target),
+            "merged_mid": merged_mid,
+            "10": leaves["10"], "30": leaves["30"],
+            "right": right, "90": leaves["90"], "110": leaves["110"],
+        }
         links = (
-            ("root80", "right", 1),
-            ("moving50", "middle_slot", 0),
-            ("moving20", "moving50", 0),
-            ("moving20", "10", 0), ("moving20", "30", 1),
+            ("root", "parent", 0), ("root", "right", 1),
+            ("parent", "10", 0), ("parent", "30", 1), ("parent", "merged_mid", 2),
             ("right", "90", 0), ("right", "110", 1),
         )
-        frames.append(draw(moving, links, "空槽与 20 把 50 拉回同一层"))
-    state = {
-        "root": root80_row, "parent": row(("20", "50"), positions=parent_target),
-        "merged_mid": merged_mid,
-        "10": leaves["10"], "30": leaves["30"],
-        "right": right, "90": leaves["90"], "110": leaves["110"],
-    }
-    links = (
-        ("root", "parent", 0), ("root", "right", 1),
-        ("parent", "10", 0), ("parent", "30", 1), ("parent", "merged_mid", 2),
-        ("right", "90", 0), ("right", "110", 1),
-    )
-    frames.extend([draw(state, links, "首领 50 到位，形成 [20,50]，空槽解决")] * 18)
-    frames.extend([draw(state, links, "目标是 10：先让首领 20 回家")] * 15)
-    select(state, links, "10", "先描边叶节点 10")
-    parent50_row = row(("50",), positions=(parent_target[1],))
-    for step in range(1, 61):
-        progress = ease(step / 60.0)
-        moving = dict(state)
-        moving["parent50"] = parent50_row
-        moving["home20"] = move(row(("20",), positions=(parent_target[0],)), left_trio[1], progress)
-        moving["home10"] = move(leaves["10"], left_trio[0], progress)
-        moving["home30"] = move(leaves["30"], left_trio[2], progress)
-        moving.pop("parent", None)
-        moving.pop("10", None)
-        moving.pop("30", None)
+        frames.extend([draw(state, links, "首领 50 到位，形成 [20,50]，空槽解决")] * 18)
+        frames.extend([draw(state, links, "目标是 10：先让首领 20 回家")] * 15)
+        select(state, links, "10", "先描边叶节点 10")
+        parent50_row = row(("50",), positions=(parent_target[1],))
+        for step in range(1, 61):
+            progress = ease(step / 60.0)
+            moving = dict(state)
+            moving["parent50"] = parent50_row
+            moving["home20"] = move(row(("20",), positions=(parent_target[0],)), left_trio[1], progress)
+            moving["home10"] = move(leaves["10"], left_trio[0], progress)
+            moving["home30"] = move(leaves["30"], left_trio[2], progress)
+            moving.pop("parent", None)
+            moving.pop("10", None)
+            moving.pop("30", None)
+            links = (
+                ("root", "parent50", 0), ("root", "right", 1),
+                ("parent50", "merged_mid", 1),
+                ("home20", "home10", 0), ("home20", "home30", 1),
+                ("right", "90", 0), ("right", "110", 1),
+            )
+            frames.append(draw(moving, links, "首领 20 回家，10、30 完整跟随"))
+        trio_left_row = row(("10", "20", "30"), positions=left_trio)
+        state = {
+            "root": root80_row, "parent": parent50_row,
+            "trio_left": trio_left_row, "merged_mid": merged_mid,
+            "right": right, "90": leaves["90"], "110": leaves["110"],
+        }
         links = (
-            ("root", "parent50", 0), ("root", "right", 1),
-            ("parent50", "merged_mid", 1),
-            ("home20", "home10", 0), ("home20", "home30", 1),
+            ("root", "parent", 0), ("root", "right", 1),
+            ("parent", "trio_left", 0), ("parent", "merged_mid", 1),
             ("right", "90", 0), ("right", "110", 1),
         )
-        frames.append(draw(moving, links, "首领 20 回家，10、30 完整跟随"))
-    trio_left_row = row(("10", "20", "30"), positions=left_trio)
-    state = {
-        "root": root80_row, "parent": parent50_row,
-        "trio_left": trio_left_row, "merged_mid": merged_mid,
-        "right": right, "90": leaves["90"], "110": leaves["110"],
-    }
-    links = (
-        ("root", "parent", 0), ("root", "right", 1),
-        ("parent", "trio_left", 0), ("parent", "merged_mid", 1),
-        ("right", "90", 0), ("right", "110", 1),
-    )
-    frames.extend([draw(state, links, "首领 20 回家，与 10、30 合并")] * 18)
-    select_cell(state, links, left_trio[0], "删除 10")
-    state = {
-        "root": root80_row, "parent": parent50_row,
-        "trio_left": row(("20", "30"), positions=pair_left),
-        "merged_mid": merged_mid,
-        "right": right, "90": leaves["90"], "110": leaves["110"],
-    }
-    frames.extend([draw(state, links, "删除 10，首领回家完成，树始终合法")] * 90)
+        frames.extend([draw(state, links, "首领 20 回家，与 10、30 合并")] * 18)
+        select_cell(state, links, left_trio[0], "删除 10")
+        state = {
+            "root": root80_row, "parent": parent50_row,
+            "trio_left": row(("20", "30"), positions=pair_left),
+            "merged_mid": merged_mid,
+            "right": right, "90": leaves["90"], "110": leaves["110"],
+        }
+        frames.extend([draw(state, links, "删除 10，首领回家完成，树始终合法")] * 90)
+    else:
+        # Mirror the original home animation on the right.  80 and 100 move as
+        # independent internal rows; the leaf group [55,60] remains at leaf
+        # level until the new [80,100] parent is fully docked.
+        target_parent = cell_slots((800.0, 285.0), 2)
+        for step in range(1, 61):
+            progress = ease(step / 60.0)
+            moving = {
+                "root": root50_row,
+                "left": left,
+                "home80": move(root80_row, target_parent[0], progress),
+                "home100": move(right, target_parent[1], progress),
+                "10": leaves["10"],
+                "30": leaves["30"],
+                "merged_mid": merged_mid,
+                "90": leaves["90"],
+                "110": leaves["110"],
+                "root80_slot": row((None,), positions=(root80_row[1][0],)),
+                "middle_slot": move(state["middle_slot"], target_parent[0], progress),
+            }
+            links = (
+                ("root", "left", 0),
+                ("left", "10", 0), ("left", "30", 1),
+                ("home80", "middle_slot", 0), ("home80", "home100", 1),
+                ("home100", "90", 0), ("home100", "110", 1),
+            )
+            frames.append(draw(
+                moving,
+                links,
+                "红色空槽与 100 把首领 80 拉回同一层",
+                ghosts=("root80_slot", "middle_slot"),
+            ))
+        state = {
+            "root": root50_row,
+            "left": left,
+            "parent": row(("80", "100"), positions=target_parent),
+            "10": leaves["10"], "30": leaves["30"], "merged_mid": merged_mid,
+            "90": leaves["90"], "110": leaves["110"],
+        }
+        links = (
+            ("root", "left", 0), ("root", "parent", 1),
+            ("left", "10", 0), ("left", "30", 1),
+            ("parent", "merged_mid", 0), ("parent", "90", 1), ("parent", "110", 2),
+        )
+        frames.extend([draw(state, links, "首领 80 到位，形成 [80,100]，空槽解决")] * 18)
+        frames.extend([draw(state, links, "目标是 10：先让首领 20 回家")] * 15)
+        select(state, links, "10", "先描边叶节点 10")
+
+        parent_stable = state["parent"]
+        for step in range(1, 61):
+            progress = ease(step / 60.0)
+            moving = {
+                "root": state["root"],
+                "parent": parent_stable,
+                "home20": move(left, left_trio[1], progress),
+                "home10": move(leaves["10"], left_trio[0], progress),
+                "home30": move(leaves["30"], left_trio[2], progress),
+                "merged_mid": merged_mid, "90": leaves["90"], "110": leaves["110"],
+                "left_slot": empty(left),
+            }
+            moving.pop("left", None)
+            moving_links = (
+                ("root", "parent", 1),
+                ("home20", "home10", 0), ("home20", "home30", 1),
+                ("parent", "merged_mid", 0), ("parent", "90", 1), ("parent", "110", 2),
+            )
+            frames.append(draw(moving, moving_links, "首领 20 回家，10、30 完整跟随", ghosts=("left_slot",)))
+        left_merged = row(("10", "20", "30"), positions=left_trio)
+        merged_state = {
+            "root": state["root"], "parent": parent_stable, "left_slot": empty(left),
+            "left_merged": left_merged, "merged_mid": merged_mid,
+            "90": leaves["90"], "110": leaves["110"],
+        }
+        merged_links = (
+            ("root", "parent", 1),
+            ("parent", "merged_mid", 0), ("parent", "90", 1), ("parent", "110", 2),
+        )
+        frames.extend([draw(merged_state, merged_links, "形成 [10,20,30]，左侧内部槽为空", ghosts=("left_slot",))] * 18)
+        select_cell(merged_state, merged_links, left_trio[0], "删除 10")
+        left_after_delete = row(("20", "30"), positions=left_trio[1:])
+        frames.extend([draw({**merged_state, "left_merged": left_after_delete}, merged_links, "删除 10，左侧叶组变为 [20,30]", ghosts=("left_slot",))] * 18)
+
+        # The remaining empty slot is on the left (at the left child position left_slot).
+        # In this panel, root [50] (on left) and [80,100] (on right) along with left_slot
+        # pull each other together towards the center to form [50,80,100].
+        # The link is between the left root [50] and the right child [80,100] pulling each other,
+        # while left_slot at the left side moves towards the final root position as well.
+        final_root_slots = cell_slots(final_root, 3)
+        final_children = (
+            left_after_delete,
+            merged_mid,
+            leaves["90"],
+            leaves["110"],
+        )
+        final_child_targets = tuple(final_leaves)
+        source_parent = parent_stable
+        left_slot_start = empty(left)
+        for step in range(1, 73):
+            progress = ease(step / 72.0)
+            moving = {
+                "moving50": move(root50_row, final_root_slots[0], progress),
+                "left_slot": move(left_slot_start, final_root_slots[0], progress),
+                "moving80": move(row(("80",), positions=(source_parent[1][0],)), final_root_slots[1], progress),
+                "moving100": move(row(("100",), positions=(source_parent[1][1],)), final_root_slots[2], progress),
+            }
+            for index, (source, target) in enumerate(zip(final_children, final_child_targets)):
+                moving[f"child{index}"] = move(source, target, progress)
+            # 50 on the left is connected to [80,100] on the right (pulling together)
+            # and each node connects down to its respective children.
+            # 80 connects to child1 ([55,60]), 100 connects to child2 (90) and child3 (110).
+            moving_parent = row(("80", "100"), positions=(moving["moving80"][1][0], moving["moving100"][1][0]))
+            moving["moving_parent"] = moving_parent
+            contraction_links = (
+                ("moving50", "child0", 0),
+                ("moving50", "moving_parent", 1),
+                ("moving_parent", "child1", 0), ("moving_parent", "child2", 1), ("moving_parent", "child3", 2),
+            )
+            frames.append(draw(
+                moving,
+                contraction_links,
+                "根收缩为 [50,80,100]，四个叶组回到新根下面",
+                ghosts={"left_slot": max(0.0, 1.0 - progress)},
+            ))
+        final = {
+            "root": row(("50", "80", "100"), positions=final_root_slots),
+            "child0": row(("20", "30"), center=final_child_targets[0]),
+            "child1": row(("55", "60"), center=final_child_targets[1]),
+            "child2": row(("90",), center=final_child_targets[2]),
+            "child3": row(("110",), center=final_child_targets[3]),
+        }
+        final_links = (
+            ("root", "child0", 0), ("root", "child1", 1),
+            ("root", "child2", 2), ("root", "child3", 3),
+        )
+        frames.extend([draw(final, final_links, "删除 10，首领回家完成，树始终合法")] * 90)
     return frames
 
 
 def btree_case3_compare() -> None:
-    """Play two deletions so both left/right leaders and root underflow are visible."""
+    """Render case three as separate traditional and exhaustive unified videos."""
     width, height = 1100, 660
-    frames = btree_side_by_side_frames(
-        _btree_case3_frames_semantic(width, height, traditional=False),
-        _btree_case3_frames_semantic(width, height, traditional=True),
-        panel_width=width,
-        height=height,
-        left_title="我们的方法",
-        right_title="传统方法",
+    traditional = _btree_case3_frames_semantic(width, height, traditional=True)
+    unified = [
+        _btree_case3_frames_semantic(width, height, traditional=False, upper_home=upper_home)
+        for upper_home in ("50", "80")
+    ]
+    render_webm("btree-case3-traditional", traditional, fps=30, transparent=True)
+    render_webm(
+        "btree-case3-ours",
+        btree_parallel_grid_frames(
+            unified, panel_width=width, panel_height=height,
+            titles=("首领 50 回家", "首领 80 回家"), columns=2,
+        ),
+        fps=30, transparent=True, crop_pad=60,
     )
-    render_webm("btree-case3-compare", frames, fps=24, transparent=True, crop_pad=60)
 
 
 def btree_delete_complex_broken() -> None:
@@ -13175,60 +15216,914 @@ def rb_color_flip() -> None:
     render_webm("rb-color-flip", frames, fps=30, transparent=True)
 
 
-def rb_delete() -> None:
-    """Delete node 10 in real colors, show the double-black debt, then repair by rotation."""
-    pos_20a = (450.0, 130.0)
-    pos_10 = (280.0, 310.0)
-    pos_30a = (620.0, 310.0)
-    pos_40a = (760.0, 480.0)
-    pos_30b = (450.0, 130.0)
-    pos_20b = (280.0, 310.0)
-    pos_40b = (620.0, 310.0)
+def rb_delete_one_child() -> None:
+    """Show the two mirror forms side by side, then replace both at once."""
+    width, height = 1200, 620
+    left = {"20": (300.0, 120.0), "10": (230.0, 320.0), "5": (160.0, 485.0)}
+    right = {"20": (900.0, 120.0), "30": (970.0, 320.0), "35": (1040.0, 485.0)}
 
-    def page(nodes, edges, nil=None) -> str:
-        return rb_scene(list(nodes), list(edges), nil=nil, width=900, height=560)
+    def panel(nodes: Sequence[tuple[str, Point, float, bool]], edges: Sequence[tuple[str, str, float, bool]]) -> str:
+        positions = {key: point for key, point, _opacity, _red in nodes}
+        body = "".join(rb_edge_fragment(positions[a], positions[b], opacity, red) for a, b, opacity, red in edges)
+        return body + "".join(rb_node(point, key, opacity, red=red) for key, point, opacity, red in nodes)
 
-    initial_nodes = (("20", pos_20a, 1.0, False), ("10", pos_10, 1.0, False), ("30", pos_30a, 1.0, False), ("40", pos_40a, 1.0, True))
-    initial_edges = (("20", "10", 1.0, False), ("20", "30", 1.0, False), ("30", "40", 1.0, True))
+    def frame(child_left: Point, child_right: Point, parent_opacity: float, child_opacity: float, child_red: bool) -> str:
+        left_nodes = (("20", left["20"], 1.0, False), ("10", left["10"], parent_opacity, False), ("5", child_left, child_opacity, child_red))
+        right_nodes = (("20", right["20"], 1.0, False), ("30", right["30"], parent_opacity, False), ("35", child_right, child_opacity, child_red))
+        left_edges = (("20", "10", parent_opacity, False), ("10", "5", child_opacity, True))
+        right_edges = (("20", "30", parent_opacity, False), ("30", "35", child_opacity, True))
+        return svg(panel(left_nodes, left_edges) + panel(right_nodes, right_edges), width=width, height=height, color=INK)
+
+    frames: list[str] = [frame(left["5"], right["35"], 1.0, 1.0, True)] * 30
+    for step in range(1, 25):
+        t = ease(step / 24.0)
+        frames.append(frame(lerp_point(left["5"], left["10"], t), lerp_point(right["35"], right["30"], t), 1.0 - t, 1.0, True))
+    frames.extend([frame(left["10"], right["30"], 1.0, 1.0, False)] * 36)
+    render_webm("rb-delete-one-child", frames, fps=30, transparent=True)
+
+
+def _rb_delete_zero_child_legacy() -> None:
+    """Show red-leaf deletion and black-leaf deletion as the two zero-child cases."""
+    root = (450.0, 120.0)
+    left = (265.0, 315.0)
+    right = (635.0, 315.0)
+    red_leaf = (175.0, 510.0)
+    black_leaf = (725.0, 510.0)
+    leader_home = (450.0, 315.0)
+    merged_left = (300.0, 510.0)
+    merged_right = (600.0, 510.0)
+    promoted = (450.0, 120.0)
+    final_left = (300.0, 315.0)
+    final_right = (600.0, 315.0)
+
+    def page(nodes, edges) -> str:
+        return rb_scene(list(nodes), list(edges), width=900, height=620)
 
     frames: list[str] = []
-    frames.extend([page(initial_nodes, initial_edges)] * 22)
 
-    # Delete black 10; the double-black NIL marker records the missing black layer.
-    for step in range(1, 17):
-        t = ease(step / 16.0)
-        nodes = (("20", pos_20a, 1.0, False), ("10", pos_10, 1.0 - t, False), ("30", pos_30a, 1.0, False), ("40", pos_40a, 1.0, True))
-        edges = (("20", "10", 1.0 - t, False), ("20", "30", 1.0, False), ("30", "40", 1.0, True))
-        if t > 0.25:
-            edges += (("20", "NIL", min(1.0, max(0.0, (t - 0.25) / 0.75)), False),)
-        frames.append(page(nodes, edges, nil=(pos_10, t)))
-    underflow_nodes = (("20", pos_20a, 1.0, False), ("30", pos_30a, 1.0, False), ("40", pos_40a, 1.0, True))
-    underflow_edges = (("20", "30", 1.0, False), ("30", "40", 1.0, True), ("20", "NIL", 1.0, False))
-    frames.extend([page(underflow_nodes, underflow_edges, nil=(pos_10, 1.0))] * 22)
+    # Case one: a red leaf can disappear without changing black height.
+    red_nodes = (
+        ("20", root, 1.0, False),
+        ("10", left, 1.0, False),
+        ("30", right, 1.0, False),
+        ("5", red_leaf, 1.0, True),
+        ("15", (355.0, 510.0), 1.0, False),
+        ("25", (545.0, 510.0), 1.0, False),
+        ("35", (745.0, 510.0), 1.0, False),
+    )
+    red_edges = (
+        ("20", "10", 1.0, False), ("20", "30", 1.0, False),
+        ("10", "5", 1.0, True), ("10", "15", 1.0, False),
+        ("30", "25", 1.0, False), ("30", "35", 1.0, False),
+    )
+    frames.extend([page(red_nodes, red_edges)] * 28)
+    for step in range(1, 25):
+        t = ease(step / 24.0)
+        nodes = tuple(
+            (key, point, 1.0 if key != "5" else 1.0 - t, red)
+            for key, point, _opacity, red in red_nodes
+        )
+        edges = (("20", "10", 1.0, False), ("20", "30", 1.0, False), ("10", "5", 1.0 - t, True))
+        frames.append(page(nodes, edges))
+    red_final = (
+        ("20", root, 1.0, False), ("10", left, 1.0, False), ("30", right, 1.0, False),
+        ("15", (355.0, 510.0), 1.0, False), ("25", (545.0, 510.0), 1.0, False),
+        ("35", (745.0, 510.0), 1.0, False),
+    )
+    red_final_edges = (
+        ("20", "10", 1.0, False), ("20", "30", 1.0, False),
+        ("10", "15", 1.0, False), ("30", "25", 1.0, False), ("30", "35", 1.0, False),
+    )
+    frames.extend([page(red_final, red_final_edges)] * 32)
 
-    # Repair by rotation: 30 rises to the root, 20 takes its place as left child.
+    # This second example is also a legal red-black tree: 10 is the lone
+    # black leaf to delete; [25, 30, 35] is the sibling B-tree group.
+    black_nodes = (
+        ("20", root, 1.0, False), ("10", left, 1.0, False), ("30", right, 1.0, False),
+        ("25", (545.0, 510.0), 1.0, True), ("35", (745.0, 510.0), 1.0, True),
+    )
+    black_edges = (
+        ("20", "10", 1.0, False), ("20", "30", 1.0, False),
+        ("30", "25", 1.0, True), ("30", "35", 1.0, True),
+    )
+    frames.extend([page(black_nodes, black_edges)] * 28)
+
+    # Delete the single black leaf, then bring root leader 20 home to form
+    # the temporary four-key B-tree group [20, 25, 30, 35].
+    row = {"20": (285.0, 455.0), "25": (405.0, 455.0), "30": (525.0, 455.0), "35": (645.0, 455.0)}
+    for step in range(1, 37):
+        t = ease(step / 36.0)
+        positions = {"20": lerp_point(root, row["20"], t), "30": lerp_point(right, row["30"], t), "25": lerp_point((545.0, 510.0), row["25"], t), "35": lerp_point((745.0, 510.0), row["35"], t)}
+        nodes = (
+            ("20", positions["20"], 1.0, False), ("10", left, 1.0 - t, False),
+            ("25", positions["25"], 1.0, True), ("30", positions["30"], 1.0, False), ("35", positions["35"], 1.0, True),
+        )
+        edges = (("20", "10", 1.0 - t, False), ("20", "30", 1.0, False), ("30", "25", 1.0, True), ("30", "35", 1.0, True))
+        frames.append(page(nodes, edges))
+    merged = (("20", row["20"], 1.0, False), ("25", row["25"], 1.0, True), ("30", row["30"], 1.0, False), ("35", row["35"], 1.0, True))
+    merged_edges = (("20", "25", 1.0, False), ("25", "30", 1.0, True), ("30", "35", 1.0, False))
+    frames.extend([page(merged, merged_edges)] * 24)
+
+    # The black median 30 is promoted first, so its color stays black during
+    # motion.  Once it docks, it becomes red and both split roots are black.
+    left_split, right_split = (310.0, 315.0), (590.0, 315.0)
     for step in range(1, 43):
         t = ease(step / 42.0)
-        fade_out = max(0.0, 1.0 - 2.8 * t)
-        edge_in = min(1.0, max(0.0, 2.4 * t - 1.32))
-        nil_opacity = max(0.0, 1.0 - 2.0 * t)
-        parts = [
-            rb_edge_fragment(pos_20a, pos_30a, fade_out, False),
-            rb_edge_fragment(pos_30a, pos_40a, fade_out, True),
-            rb_edge_fragment(pos_20a, pos_10, fade_out, False),
-            rb_edge_fragment(pos_30b, pos_20b, edge_in, False),
-            rb_edge_fragment(pos_30b, pos_40b, edge_in, True),
-            rb_node(lerp_point(pos_20a, pos_20b, t), "20", 1.0, red=False),
-            rb_node(lerp_point(pos_30a, pos_30b, t), "30", 1.0, red=False),
-            rb_node(lerp_point(pos_40a, pos_40b, t), "40", 1.0, red=True),
-        ]
-        if nil_opacity > 0.02:
-            parts.append(rb_nil_fragment(pos_10, nil_opacity))
-        frames.append(svg("".join(parts), width=900, height=560, color=INK))
-    final_nodes = (("20", pos_20b, 1.0, False), ("30", pos_30b, 1.0, False), ("40", pos_40b, 1.0, True))
-    final_edges = (("30", "20", 1.0, False), ("30", "40", 1.0, True))
-    frames.extend([page(final_nodes, final_edges)] * 28)
-    render_webm("rb-delete", frames, fps=30, transparent=True)
+        nodes = (
+            ("20", lerp_point(row["20"], left_split, t), 1.0, False),
+            ("25", lerp_point(row["25"], (230.0, 500.0), t), 1.0, True),
+            ("30", lerp_point(row["30"], promoted, t), 1.0, False),
+            ("35", lerp_point(row["35"], right_split, t), 1.0, t >= 0.92),
+        )
+        edges = (("30", "20", 1.0, False), ("20", "25", 1.0, True), ("30", "35", 1.0, False))
+        frames.append(page(nodes, edges))
+    promoted_nodes = (("30", promoted, 1.0, True), ("20", left_split, 1.0, False), ("25", (230.0, 500.0), 1.0, True), ("35", right_split, 1.0, False))
+    promoted_edges = (("30", "20", 1.0, False), ("20", "25", 1.0, True), ("30", "35", 1.0, False))
+    frames.extend([page(promoted_nodes, promoted_edges)] * 22)
+
+    # Pull that leader back into its group: it returns black, while the two
+    # neighboring members turn red.
+    for step in range(1, 37):
+        t = ease(step / 36.0)
+        nodes = (
+            ("20", lerp_point(left_split, row["20"], t), 1.0, t >= 0.9),
+            ("25", lerp_point((230.0, 500.0), row["25"], t), 1.0, True),
+            ("30", lerp_point(promoted, row["30"], t), 1.0, t < 0.9),
+            ("35", lerp_point(right_split, row["35"], t), 1.0, t >= 0.9),
+        )
+        frames.append(page(nodes, merged_edges))
+    final_nodes = (("20", row["20"], 1.0, True), ("25", row["25"], 1.0, True), ("30", row["30"], 1.0, False), ("35", row["35"], 1.0, True))
+    frames.extend([page(final_nodes, merged_edges)] * 34)
+    render_webm("rb-delete-zero-child", frames, fps=30, transparent=True)
+
+
+def rb_delete_zero_child() -> None:
+    """Delete a red leaf without changing the black height."""
+    root, left, right = (450.0, 120.0), (270.0, 315.0), (630.0, 315.0)
+    red_leaf = (180.0, 500.0)
+
+    def page(nodes, edges) -> str:
+        return rb_scene(list(nodes), list(edges), width=900, height=620)
+
+    # Keep the already-approved first example unchanged: a red leaf vanishes
+    # from a valid tree and no balancing step follows it.
+    base = (("20", root, 1.0, False), ("10", left, 1.0, False), ("30", right, 1.0, False), ("5", red_leaf, 1.0, True))
+    edges = (("20", "10", 1.0, False), ("20", "30", 1.0, False), ("10", "5", 1.0, True))
+    frames: list[str] = [page(base, edges)] * 30
+    for step in range(1, 25):
+        t = ease(step / 24.0)
+        frames.append(page(tuple((key, point, 1.0 - t if key == "5" else opacity, red) for key, point, opacity, red in base), tuple((a, b, 1.0 - t if b == "5" else opacity, red) for a, b, opacity, red in edges)))
+    after_red = (("20", root, 1.0, False), ("10", left, 1.0, False), ("30", right, 1.0, False))
+    after_red_edges = (("20", "10", 1.0, False), ("20", "30", 1.0, False))
+    frames.extend([page(after_red, after_red_edges)] * 30)
+    render_webm("rb-delete-zero-child", frames, fps=30, transparent=True)
+
+
+def rb_delete_cases(case_names: set[str] | None = None) -> None:
+    """Show black-leaf deletion in red-black tree form with binary rotations and color flips."""
+    width, height = 1200, 760
+
+    def scene(
+        positions: Mapping[str, Point],
+        colors: Mapping[str, bool],
+        edges: Sequence[tuple[str, str]],
+        *,
+        opacities: Mapping[str, float] | None = None,
+        edge_opacity: Mapping[tuple[str, str], float] | None = None,
+        color_transitions: Mapping[str, tuple[bool, bool, float]] | None = None,
+        ghost: tuple[Point, str, float] | None = None,
+    ) -> str:
+        opacities = opacities or {}
+        edge_opacity = edge_opacity or {}
+        color_transitions = color_transitions or {}
+        body = "".join(
+            rb_edge_fragment(
+                positions[parent],
+                positions[child],
+                edge_opacity.get((parent, child), 1.0),
+                False,
+            )
+            for parent, child in edges
+            if edge_opacity.get((parent, child), 1.0) > 0.0
+        )
+        for key, point in positions.items():
+            opacity = opacities.get(key, 1.0)
+            transition = color_transitions.get(key)
+            if transition is None:
+                body += rb_node(point, key, opacity, red=colors[key])
+            else:
+                before, after, blend = transition
+                body += rb_node(point, key, opacity * (1.0 - blend), red=before)
+                body += rb_node(point, key, opacity * blend, red=after)
+        if ghost is not None and ghost[2] > 0.0:
+            body += rb_nil_fragment(ghost[0], ghost[2], ghost[1])
+        return svg(body, width=width, height=height, color=INK)
+
+    # -------------------------------------------------------------
+    # Case 1: far red child.  The binary-tree geometry stays visible throughout:
+    # 7 returns home through reverse colouring, 9 is deleted, then the 5--7
+    # lever rotates only after 2 and 6 have been detached and later reattached.
+    # -------------------------------------------------------------
+    def case1() -> None:
+        p_7_0 = (600.0, 160.0)
+        p_5_0 = (380.0, 360.0)
+        p_9_0 = (820.0, 360.0)
+        p_2_0 = (240.0, 560.0)
+        p_6_0 = (520.0, 560.0)
+
+        # The final 5--7 bar uses the same midpoint as the initial bar, so it
+        # can visibly rotate about its center rather than translating its pivot.
+        p_5_1 = (380.0, 160.0)
+        p_2_1 = (240.0, 360.0)
+        p_7_1 = (600.0, 360.0)
+        p_6_1 = (500.0, 560.0)
+
+        pos0 = {"7": p_7_0, "5": p_5_0, "9": p_9_0, "2": p_2_0, "6": p_6_0}
+        colors = {"7": False, "5": False, "9": False, "2": True, "6": True}
+        edges0 = (("7", "5"), ("7", "9"), ("5", "2"), ("5", "6"))
+
+        frames: list[str] = [scene(pos0, colors, edges0)] * 24
+
+        # 7 returns home: it stays black; its two children 5 and 9 become red.
+        home_colors = {"7": False, "5": True, "9": True, "2": True, "6": True}
+        for step in range(1, 25):
+            t = ease(step / 24.0)
+            frames.append(scene(
+                pos0, colors, edges0,
+                color_transitions={"5": (False, True, t), "9": (False, True, t)},
+            ))
+        frames.extend([scene(pos0, home_colors, edges0)] * 18)
+
+        # Delete 9.  Its colour has no special follow-up treatment.
+        for step in range(1, 25):
+            t = ease(step / 24.0)
+            frames.append(scene(
+                pos0, home_colors, edges0,
+                opacities={"9": 1.0 - t},
+                edge_opacity={("7", "9"): 1.0 - t},
+            ))
+        pos_after_del = {"7": p_7_0, "5": p_5_0, "2": p_2_0, "6": p_6_0}
+        colors_del = {"7": False, "5": True, "2": True, "6": True}
+        edges_del = (("7", "5"), ("5", "2"), ("5", "6"))
+        frames.extend([scene(pos_after_del, colors_del, edges_del)] * 18)
+
+        # Detach 2 and 6 before using 5--7 as the lever.  The nodes remain in
+        # place; only their two incident relations leave the tree.
+        lever_edges = (("7", "5"),)
+        for step in range(1, 19):
+            t = ease(step / 18.0)
+            frames.append(scene(
+                pos_after_del, colors_del, edges_del,
+                edge_opacity={("5", "2"): 1.0 - t, ("5", "6"): 1.0 - t},
+            ))
+        frames.extend([scene(pos_after_del, colors_del, lever_edges)] * 14)
+
+        # Rotate the bare 5--7 lever around its fixed center.  5 and 7 remain
+        # opposite endpoints of one rigid bar rather than travelling independently.
+        start_center = ((p_5_0[0] + p_7_0[0]) / 2.0, (p_5_0[1] + p_7_0[1]) / 2.0)
+        half_length = hypot(p_7_0[0] - p_5_0[0], p_7_0[1] - p_5_0[1]) / 2.0
+        start_angle = atan2(p_5_0[1] - start_center[1], p_5_0[0] - start_center[0])
+        target_angle = atan2(p_5_1[1] - start_center[1], p_5_1[0] - start_center[0])
+        sweep = (target_angle - start_angle + pi) % (2.0 * pi) - pi
+        for step in range(1, 43):
+            t = ease(step / 42.0)
+            angle = start_angle + sweep * t
+            offset = (half_length * cos(angle), half_length * sin(angle))
+            cur_pos = {
+                "5": (start_center[0] + offset[0], start_center[1] + offset[1]),
+                "7": (start_center[0] - offset[0], start_center[1] - offset[1]),
+                "2": p_2_0,
+                "6": p_6_0,
+            }
+            cur_edges = (("5", "7"),) if t >= 0.5 else lever_edges
+            frames.append(scene(
+                cur_pos, colors_del, cur_edges,
+            ))
+
+        pos_lever = {"5": p_5_1, "2": p_2_0, "7": p_7_1, "6": p_6_0}
+        frames.extend([scene(pos_lever, colors_del, (("5", "7"),))] * 14)
+
+        # Hook the detached descendants onto their rotation destinations.
+        pos_rot = {"5": p_5_1, "2": p_2_1, "7": p_7_1, "6": p_6_1}
+        edges_rot = (("5", "2"), ("5", "7"), ("7", "6"))
+        for step in range(1, 31):
+            t = ease(step / 30.0)
+            cur_pos = {
+                "5": p_5_1,
+                "7": p_7_1,
+                "2": lerp_point(p_2_0, p_2_1, t),
+                "6": lerp_point(p_6_0, p_6_1, t),
+            }
+            frames.append(scene(
+                cur_pos, colors_del, edges_rot,
+                edge_opacity={("5", "2"): t, ("7", "6"): t},
+            ))
+        frames.extend([scene(pos_rot, colors_del, edges_rot)] * 16)
+
+        # First pull-back colouring: 5 becomes black, while 2 and 7 become red.
+        pullback_colors = {"5": False, "2": True, "7": True, "6": True}
+        for step in range(1, 25):
+            t = ease(step / 24.0)
+            frames.append(scene(
+                pos_rot, colors_del, edges_rot,
+                color_transitions={
+                    "5": (True, False, t),
+                    "7": (False, True, t),
+                },
+            ))
+        frames.extend([scene(pos_rot, pullback_colors, edges_rot)] * 18)
+
+        # Re-elect 5: it turns red, and 2/7 return to black.
+        reelected_colors = {"5": True, "2": False, "7": False, "6": True}
+        for step in range(1, 25):
+            t = ease(step / 24.0)
+            frames.append(scene(
+                pos_rot, pullback_colors, edges_rot,
+                color_transitions={
+                    "5": (False, True, t),
+                    "2": (True, False, t),
+                    "7": (True, False, t),
+                },
+            ))
+        frames.extend([scene(pos_rot, reelected_colors, edges_rot)] * 18)
+
+        # 5 is now the root, so it must finish black.
+        final_colors = {"5": False, "2": False, "7": False, "6": True}
+        for step in range(1, 19):
+            t = ease(step / 18.0)
+            frames.append(scene(
+                pos_rot, reelected_colors, edges_rot,
+                color_transitions={"5": (True, False, t)},
+            ))
+        frames.extend([scene(pos_rot, final_colors, edges_rot)] * 40)
+        render_webm("rb-delete-case1-far-red", frames, fps=30, transparent=True)
+
+    # -------------------------------------------------------------
+    # Case 2: near red child.  5--6 turns first, then the transformed 6--7
+    # lever turns.  Both turns use a fixed midpoint and explicit detach/attach.
+    # -------------------------------------------------------------
+    def case2() -> None:
+        p_7_0 = (600.0, 150.0)
+        p_5_0 = (380.0, 350.0)
+        p_9_0 = (820.0, 350.0)
+        p_6_0 = (500.0, 550.0)
+
+        p_5_1 = (340.0, 510.0)
+        p_6_1 = (540.0, 390.0)
+        p_6_2 = (460.0, 213.4)
+        p_7_2 = (680.0, 326.6)
+
+        pos0 = {"7": p_7_0, "5": p_5_0, "9": p_9_0, "6": p_6_0}
+        colors0 = {"7": False, "5": False, "9": False, "6": True}
+        edges0 = (("7", "5"), ("7", "9"), ("5", "6"))
+
+        frames: list[str] = [scene(pos0, colors0, edges0)] * 24
+
+        # 7 returns home: it stays black while 5 and 9 become red.
+        home_colors = {"7": False, "5": True, "9": True, "6": True}
+        for step in range(1, 25):
+            t = ease(step / 24.0)
+            frames.append(scene(
+                pos0, colors0, edges0,
+                color_transitions={"5": (False, True, t), "9": (False, True, t)},
+            ))
+        frames.extend([scene(pos0, home_colors, edges0)] * 18)
+
+        # Delete 9. Its colour needs no special follow-up treatment.
+        for step in range(1, 25):
+            t = ease(step / 24.0)
+            frames.append(scene(
+                pos0, home_colors, edges0,
+                opacities={"9": 1.0 - t},
+                edge_opacity={("7", "9"): 1.0 - t},
+            ))
+        pos_after_del = {"7": p_7_0, "5": p_5_0, "6": p_6_0}
+        colors_del = {"7": False, "5": True, "6": True}
+        edges_del = (("7", "5"), ("5", "6"))
+        frames.extend([scene(pos_after_del, colors_del, edges_del)] * 18)
+
+        # Detach 7 before resolving the red-red 5--6 pair as one lever.
+        for step in range(1, 19):
+            t = ease(step / 18.0)
+            frames.append(scene(
+                pos_after_del, colors_del, edges_del,
+                edge_opacity={("7", "5"): 1.0 - t},
+            ))
+        first_lever = (("5", "6"),)
+        frames.extend([scene(pos_after_del, colors_del, first_lever)] * 14)
+
+        first_center = ((p_5_0[0] + p_6_0[0]) / 2.0, (p_5_0[1] + p_6_0[1]) / 2.0)
+        first_half_length = hypot(p_6_0[0] - p_5_0[0], p_6_0[1] - p_5_0[1]) / 2.0
+        first_start_angle = atan2(p_5_0[1] - first_center[1], p_5_0[0] - first_center[0])
+        first_target_angle = atan2(p_5_1[1] - first_center[1], p_5_1[0] - first_center[0])
+        first_sweep = (first_target_angle - first_start_angle + pi) % (2.0 * pi) - pi
+        for step in range(1, 37):
+            t = ease(step / 36.0)
+            angle = first_start_angle + first_sweep * t
+            offset = (first_half_length * cos(angle), first_half_length * sin(angle))
+            cur_pos = {
+                "7": p_7_0,
+                "5": (first_center[0] + offset[0], first_center[1] + offset[1]),
+                "6": (first_center[0] - offset[0], first_center[1] - offset[1]),
+            }
+            frames.append(scene(cur_pos, colors_del, first_lever))
+        pos_step1 = {"7": p_7_0, "6": p_6_1, "5": p_5_1}
+        edges_step1 = (("7", "6"), ("6", "5"))
+        for step in range(1, 19):
+            t = ease(step / 18.0)
+            frames.append(scene(
+                pos_step1, colors_del, edges_step1,
+                edge_opacity={("7", "6"): t},
+            ))
+        # Once the first lever is mounted again, lay this intermediate tree
+        # out by levels before starting the next operation.
+        pos_step1_neat = {"7": (600.0, 150.0), "6": (450.0, 350.0), "5": (300.0, 550.0)}
+        for step in range(1, 25):
+            t = ease(step / 24.0)
+            frames.append(scene(
+                {key: lerp_point(pos_step1[key], pos_step1_neat[key], t) for key in pos_step1},
+                colors_del, edges_step1,
+            ))
+        frames.extend([scene(pos_step1_neat, colors_del, edges_step1)] * 14)
+
+        # No recolouring happens between the two rotations.  Keep the colours
+        # from the home/delete stage while the next lever is prepared.
+
+        # Detach 5 before turning the new 6--7 lever around its midpoint.
+        second_lever = (("7", "6"),)
+        for step in range(1, 19):
+            t = ease(step / 18.0)
+            frames.append(scene(
+                pos_step1_neat, colors_del, edges_step1,
+                edge_opacity={("6", "5"): 1.0 - t},
+            ))
+        frames.extend([scene(pos_step1_neat, colors_del, second_lever)] * 14)
+
+        second_center = ((pos_step1_neat["6"][0] + pos_step1_neat["7"][0]) / 2.0, (pos_step1_neat["6"][1] + pos_step1_neat["7"][1]) / 2.0)
+        second_half_length = hypot(pos_step1_neat["7"][0] - pos_step1_neat["6"][0], pos_step1_neat["7"][1] - pos_step1_neat["6"][1]) / 2.0
+        second_start_angle = atan2(pos_step1_neat["6"][1] - second_center[1], pos_step1_neat["6"][0] - second_center[0])
+        second_target_angle = atan2(p_6_2[1] - second_center[1], p_6_2[0] - second_center[0])
+        second_sweep = (second_target_angle - second_start_angle + pi) % (2.0 * pi) - pi
+        for step in range(1, 43):
+            t = ease(step / 42.0)
+            angle = second_start_angle + second_sweep * t
+            offset = (second_half_length * cos(angle), second_half_length * sin(angle))
+            cur_pos = {
+                "6": (second_center[0] + offset[0], second_center[1] + offset[1]),
+                "7": (second_center[0] - offset[0], second_center[1] - offset[1]),
+                "5": pos_step1_neat["5"],
+            }
+            cur_edges = (("6", "7"),) if t >= 0.5 else second_lever
+            frames.append(scene(cur_pos, colors_del, cur_edges))
+        pos_step2 = {
+            "6": (second_center[0] + second_half_length * cos(second_target_angle), second_center[1] + second_half_length * sin(second_target_angle)),
+            "5": pos_step1_neat["5"],
+            "7": (second_center[0] - second_half_length * cos(second_target_angle), second_center[1] - second_half_length * sin(second_target_angle)),
+        }
+        edges_step2 = (("6", "5"), ("6", "7"))
+        for step in range(1, 23):
+            t = ease(step / 22.0)
+            frames.append(scene(
+                pos_step2, colors_del, edges_step2,
+                edge_opacity={("6", "5"): t},
+            ))
+        # The completed second rotation also resolves into a regular tree form
+        # before colouring changes, so no colour state is shown on a skewed layout.
+        pos_final = {"6": (525.0, 140.0), "5": (330.0, 385.0), "7": (720.0, 385.0)}
+        for step in range(1, 25):
+            t = ease(step / 24.0)
+            frames.append(scene(
+                {key: lerp_point(pos_step2[key], pos_final[key], t) for key in pos_step2},
+                colors_del, edges_step2,
+            ))
+        pos_step2 = pos_final
+        # The second rotation is complete before any colour change starts.
+        # Keep the old colours for only the handoff frame, so the next visible
+        # stable state is the requested 5/7-red, 6-black arrangement.
+        frames.extend([scene(pos_step2, colors_del, edges_step2)] * 4)
+
+        # Only after both rotations are complete does recolouring begin.  5
+        # stays red throughout; 7 becomes red and 6 becomes black together.
+        recolored = {"6": False, "5": True, "7": True}
+        for step in range(1, 21):
+            t = ease(step / 20.0)
+            frames.append(scene(
+                pos_step2, colors_del, edges_step2,
+                color_transitions={
+                    "6": (True, False, t),
+                    "7": (False, True, t),
+                },
+            ))
+        frames.extend([scene(pos_step2, recolored, edges_step2)] * 20)
+
+        # Re-elect 6: its two children return to black and 6 becomes red.
+        # This is distinct from the final root-blackening below.
+        reelected = {"6": True, "5": False, "7": False}
+        for step in range(1, 25):
+            t = ease(step / 24.0)
+            frames.append(scene(
+                pos_step2, recolored, edges_step2,
+                color_transitions={
+                    "6": (False, True, t),
+                    "5": (True, False, t),
+                    "7": (True, False, t),
+                },
+            ))
+        frames.extend([scene(pos_step2, reelected, edges_step2)] * 18)
+
+        # 6 is the new root, so the re-elected red node finishes black.
+        final_colors = {"6": False, "5": False, "7": False}
+        for step in range(1, 19):
+            t = ease(step / 18.0)
+            frames.append(scene(
+                pos_step2, reelected, edges_step2,
+                color_transitions={"6": (True, False, t)},
+            ))
+        frames.extend([scene(pos_step2, final_colors, edges_step2)] * 40)
+        render_webm("rb-delete-case2-near-red", frames, fps=30, transparent=True)
+
+    # -------------------------------------------------------------
+    # Case 3: black sibling, black parent.  The local 8 layer recolors first;
+    # its remaining imbalance is then resolved at the upper 15--18 lever.
+    # -------------------------------------------------------------
+    def case3() -> None:
+        pos0 = {
+            "15": (600.0, 110.0),
+            "8": (360.0, 290.0),
+            "18": (840.0, 290.0),
+            "6": (220.0, 490.0),
+            "9": (460.0, 490.0),
+            "17": (700.0, 490.0),
+            "27": (980.0, 490.0),
+            "25": (890.0, 680.0),
+            "34": (1070.0, 680.0),
+        }
+        colors0 = {
+            "15": False, "8": False, "18": False,
+            "6": False, "9": False, "17": False, "27": True,
+            "25": False, "34": False,
+        }
+        edges0 = (
+            ("15", "8"), ("15", "18"),
+            ("8", "6"), ("8", "9"),
+            ("18", "17"), ("18", "27"),
+            ("27", "25"), ("27", "34"),
+        )
+        # Rotation ends directly at the eventual root/left-child positions.
+        p_18_1 = (600.0, 120.0)
+        p_15_1 = (360.0, 300.0)
+
+        frames: list[str] = [scene(pos0, colors0, edges0)] * 24
+
+        # 8 returns home.  It stays black while its two children 6 and 9 turn red.
+        home_colors = dict(colors0)
+        home_colors["6"] = True
+        home_colors["9"] = True
+        for step in range(1, 25):
+            t = ease(step / 24.0)
+            frames.append(scene(
+                pos0, colors0, edges0,
+                color_transitions={"6": (False, True, t), "9": (False, True, t)},
+            ))
+        frames.extend([scene(pos0, home_colors, edges0)] * 18)
+
+        # Delete 9.  Its temporary red colour does not require another change.
+        for step in range(1, 25):
+            t = ease(step / 24.0)
+            frames.append(scene(
+                pos0, home_colors, edges0,
+                opacities={"9": 1.0 - t},
+                edge_opacity={("8", "9"): 1.0 - t},
+            ))
+        pos_del = dict(pos0)
+        pos_del.pop("9")
+        colors_del = dict(home_colors)
+        colors_del.pop("9")
+        edges_del = tuple(e for e in edges0 if "9" not in e)
+        frames.extend([scene(pos_del, colors_del, edges_del)] * 20)
+
+        # The remaining repair reaches 18.  Making it red exposes the 18--27
+        # red-red pair which is resolved by the upper 15--18 rotation.
+        colors_18_red = dict(colors_del)
+        colors_18_red["18"] = True
+        for step in range(1, 25):
+            t = ease(step / 24.0)
+            frames.append(scene(
+                pos_del, colors_del, edges_del,
+                color_transitions={"18": (False, True, t)},
+            ))
+        frames.extend([scene(pos_del, colors_18_red, edges_del)] * 18)
+
+        # Detach the three external subtrees before rotating the 15--18 lever.
+        lever_edges = (("15", "18"), ("8", "6"), ("27", "25"), ("27", "34"))
+        # Detaching removes only the three links from the rotating lever to
+        # its mounted subtrees. Their internal links remain visible while the
+        # bare 15--18 lever turns.
+        detached_edges = (("15", "18"), ("8", "6"), ("27", "25"), ("27", "34"))
+        detach_edges = (("15", "8"), ("18", "17"), ("18", "27"))
+        # Move the left cargo out of the tree as it is detached.  Its internal
+        # 8--6 relation stays attached to the cargo and follows both nodes.
+        pos_detached = dict(pos_del)
+        pos_detached["8"] = (pos_del["8"][0], pos_del["8"][1] + 90.0)
+        pos_detached["6"] = (pos_del["6"][0], pos_del["6"][1] + 90.0)
+        for step in range(1, 21):
+            t = ease(step / 20.0)
+            cur_pos = dict(pos_del)
+            cur_pos["8"] = lerp_point(pos_del["8"], pos_detached["8"], t)
+            cur_pos["6"] = lerp_point(pos_del["6"], pos_detached["6"], t)
+            frames.append(scene(
+                cur_pos, colors_18_red, edges_del,
+                edge_opacity={edge: 1.0 - t for edge in detach_edges},
+            ))
+        frames.extend([scene(pos_detached, colors_18_red, lever_edges)] * 14)
+
+        # First translate the bare balance into its final working area.  The
+        # ensuing rotation can therefore settle without a layout jump.
+        pos_balance = dict(pos_detached)
+        pos_balance["15"] = (360.0, 120.0)
+        pos_balance["18"] = (600.0, 300.0)
+        for step in range(1, 25):
+            t = ease(step / 24.0)
+            cur_pos = dict(pos_detached)
+            cur_pos["15"] = lerp_point(pos_detached["15"], pos_balance["15"], t)
+            cur_pos["18"] = lerp_point(pos_detached["18"], pos_balance["18"], t)
+            frames.append(scene(cur_pos, colors_18_red, lever_edges))
+        frames.extend([scene(pos_balance, colors_18_red, lever_edges)] * 14)
+
+        # 15--18 is a rigid lever. Its midpoint stays fixed throughout this
+        # rotation; only after it settles do the detached subtrees move.
+        center = ((pos_balance["15"][0] + pos_balance["18"][0]) / 2.0, (pos_balance["15"][1] + pos_balance["18"][1]) / 2.0)
+        half_length = hypot(pos_balance["18"][0] - pos_balance["15"][0], pos_balance["18"][1] - pos_balance["15"][1]) / 2.0
+        start_angle = atan2(pos_balance["15"][1] - center[1], pos_balance["15"][0] - center[0])
+        target_angle = atan2(p_15_1[1] - center[1], p_15_1[0] - center[0])
+        sweep = (target_angle - start_angle + pi) % (2.0 * pi) - pi
+        for step in range(1, 43):
+            t = ease(step / 42.0)
+            angle = start_angle + sweep * t
+            offset = (half_length * cos(angle), half_length * sin(angle))
+            cur_pos = dict(pos_balance)
+            cur_pos["15"] = (center[0] + offset[0], center[1] + offset[1])
+            cur_pos["18"] = (center[0] - offset[0], center[1] - offset[1])
+            cur_edges = (("18", "15"), ("8", "6"), ("27", "25"), ("27", "34")) if t >= 0.5 else detached_edges
+            frames.append(scene(cur_pos, colors_18_red, cur_edges))
+
+        pos_lever = dict(pos_balance)
+        pos_lever["15"] = p_15_1
+        pos_lever["18"] = p_18_1
+        frames.extend([scene(pos_lever, colors_18_red, (("18", "15"), ("8", "6"), ("27", "25"), ("27", "34")))] * 14)
+
+        # Reattach the waiting subtrees in their rotated positions.
+        pos_final = {
+            "18": p_18_1, "15": p_15_1, "27": (840.0, 300.0),
+            "8": (220.0, 520.0), "17": (500.0, 520.0), "25": (740.0, 520.0),
+            "34": (960.0, 520.0), "6": (120.0, 700.0),
+        }
+        edges_final = (
+            ("18", "15"), ("18", "27"),
+            ("15", "8"), ("15", "17"),
+            ("8", "6"),
+            ("27", "25"), ("27", "34"),
+        )
+        move_nodes = ("8", "6", "17", "27", "25", "34")
+        reattach_edges = (("18", "27"), ("15", "8"), ("15", "17"))
+        for step in range(1, 35):
+            t = ease(step / 34.0)
+            cur_pos = dict(pos_lever)
+            cur_pos.update({key: lerp_point(pos_detached[key], pos_final[key], t) for key in move_nodes})
+            frames.append(scene(
+                cur_pos, colors_18_red, edges_final,
+                edge_opacity={edge: t for edge in reattach_edges},
+            ))
+        frames.extend([scene(pos_final, colors_18_red, edges_final)] * 18)
+
+        # Pull back after the left rotation: 18 becomes black while both 15
+        # and 27 become red.
+        pulled_back = dict(colors_18_red)
+        pulled_back.update({"18": False, "15": True, "27": True})
+        for step in range(1, 25):
+            t = ease(step / 24.0)
+            frames.append(scene(
+                pos_final, colors_18_red, edges_final,
+                color_transitions={
+                    "18": (True, False, t),
+                    "15": (False, True, t),
+                },
+            ))
+        frames.extend([scene(pos_final, pulled_back, edges_final)] * 18)
+
+        # Re-elect 18: 15 and 27 return to black while 18 turns red.
+        reelected = dict(pulled_back)
+        reelected.update({"18": True, "15": False, "27": False})
+        for step in range(1, 25):
+            t = ease(step / 24.0)
+            frames.append(scene(
+                pos_final, pulled_back, edges_final,
+                color_transitions={
+                    "18": (False, True, t),
+                    "15": (True, False, t),
+                    "27": (True, False, t),
+                },
+            ))
+        frames.extend([scene(pos_final, reelected, edges_final)] * 18)
+
+        # 18 is now the root, so it finishes black.
+        colors_final = dict(reelected)
+        colors_final["18"] = False
+        for step in range(1, 19):
+            t = ease(step / 18.0)
+            frames.append(scene(
+                pos_final, reelected, edges_final,
+                color_transitions={"18": (True, False, t)},
+            ))
+        frames.extend([scene(pos_final, colors_final, edges_final)] * 40)
+        render_webm("rb-delete-case3-black-parent", frames, fps=30, transparent=True)
+
+    # -------------------------------------------------------------
+    # Case 4: 红父黑兄无红孩 (Red Parent, Black Sibling)
+    # 10(黑) -> 4(黑), 25(红); 25 -> 17(黑), 28(黑)
+    # 25/17/28 first become red together; then the red 28 is deleted.
+    # The remaining local repair only blackens 25; 17 stays red. No rotation.
+    # -------------------------------------------------------------
+    def case4() -> None:
+        pos0 = {
+            "10": (600.0, 140.0),
+            "4": (360.0, 340.0),
+            "25": (840.0, 340.0),
+            "17": (720.0, 540.0),
+            "28": (960.0, 540.0),
+        }
+        colors0 = {
+            "10": False, "4": False, "25": True,
+            "17": False, "28": False,
+        }
+        edges0 = (("10", "4"), ("10", "25"), ("25", "17"), ("25", "28"))
+        frames: list[str] = [scene(pos0, colors0, edges0)] * 30
+
+        # 25 returns home as a black leader; only then can its two children
+        # become red. The red 28 is deleted after this handoff.
+        home_colors = {"10": False, "4": False, "25": False, "17": True, "28": True}
+        for step in range(1, 25):
+            t = ease(step / 24.0)
+            frames.append(scene(
+                pos0, colors0, edges0,
+                color_transitions={
+                    "25": (True, False, t),
+                    "17": (False, True, t),
+                    "28": (False, True, t),
+                },
+            ))
+        frames.extend([scene(pos0, home_colors, edges0)] * 18)
+
+        # Delete the now-red 28.
+        for step in range(1, 25):
+            t = ease(step / 24.0)
+            frames.append(scene(
+                pos0, home_colors, edges0,
+                opacities={"28": 1.0 - t},
+                edge_opacity={("25", "28"): 1.0 - t},
+            ))
+        pos_del = dict(pos0)
+        pos_del.pop("28")
+        colors_del = dict(home_colors)
+        colors_del.pop("28")
+        edges_del = (("10", "4"), ("10", "25"), ("25", "17"))
+        frames.extend([scene(pos_del, colors_del, edges_del)] * 20)
+
+        # Recolor: 25 turns black; 17 is already red from the pre-delete step.
+        for step in range(1, 30):
+            t = ease(step / 29.0)
+            frames.append(scene(
+                pos_del, colors_del, edges_del,
+                color_transitions={
+                    "25": (True, False, t),
+                },
+            ))
+        colors_final = {"10": False, "4": False, "25": False, "17": True}
+        frames.extend([scene(pos_del, colors_final, edges_del)] * 45)
+        render_webm("rb-delete-case4-red-parent", frames, fps=30, transparent=True)
+
+    # -------------------------------------------------------------
+    # Case 5: red sibling. Rotate first, then recolour, then delete 27.
+    # -------------------------------------------------------------
+    def case5() -> None:
+        p_18_0 = (600.0, 150.0)
+        p_15_0 = (380.0, 350.0)
+        # 27 already sits in its final lower-right cargo position, so it does
+        # not need to be translated while the balance is detached.
+        p_27_0 = (820.0, 550.0)
+        p_9_0 = (240.0, 550.0)
+        p_17_0 = (520.0, 550.0)
+
+        # Right rotation: 15 becomes root and 18 becomes its right child.
+        # Both endpoints stay on the original rotation circle, so the lever
+        # does not translate.
+        p_15_1 = (380.0, 150.0)
+        p_9_1 = p_9_0
+        p_18_1 = (600.0, 350.0)
+        p_17_1 = p_17_0
+        p_27_1 = p_27_0
+
+        pos0 = {"18": p_18_0, "15": p_15_0, "27": p_27_0, "9": p_9_0, "17": p_17_0}
+        colors0 = {"18": False, "15": True, "27": False, "9": False, "17": False}
+        edges0 = (("18", "15"), ("18", "27"), ("15", "9"), ("15", "17"))
+        frames: list[str] = [scene(pos0, colors0, edges0)] * 30
+
+        # Detach the mounted cargo edges, but leave every cargo in place.
+        detached = {"9": p_9_0, "17": p_17_0, "27": p_27_0}
+        bare_edges = (("18", "15"),)
+        for step in range(1, 25):
+            t = ease(step / 24.0)
+            cur_pos = dict(pos0)
+            cur_pos.update({key: lerp_point(pos0[key], detached[key], t) for key in detached})
+            frames.append(scene(
+                cur_pos, colors0, edges0,
+                edge_opacity={("15", "9"): 1.0 - t, ("15", "17"): 1.0 - t, ("18", "27"): 1.0 - t},
+            ))
+        pos_detached = {"15": p_15_0, "18": p_18_0, **detached}
+        frames.extend([scene(pos_detached, colors0, bare_edges)] * 14)
+
+        # Rotate the bare lever directly around its original fixed midpoint.
+        center = ((p_15_0[0] + p_18_0[0]) / 2.0, (p_15_0[1] + p_18_0[1]) / 2.0)
+        half_length = hypot(p_18_0[0] - p_15_0[0], p_18_0[1] - p_15_0[1]) / 2.0
+        start_angle = atan2(p_15_0[1] - center[1], p_15_0[0] - center[0])
+        target_angle = atan2(p_15_1[1] - center[1], p_15_1[0] - center[0])
+        sweep = (target_angle - start_angle + pi) % (2.0 * pi) - pi
+        for step in range(1, 43):
+            t = ease(step / 42.0)
+            angle = start_angle + sweep * t
+            offset = (half_length * cos(angle), half_length * sin(angle))
+            cur_pos = {
+                "15": (center[0] + offset[0], center[1] + offset[1]),
+                "18": (center[0] - offset[0], center[1] - offset[1]),
+                **detached,
+            }
+            frames.append(scene(cur_pos, colors0, bare_edges))
+
+        pos_lever = {"15": p_15_1, "18": p_18_1, **detached}
+        frames.extend([scene(pos_lever, colors0, bare_edges)] * 14)
+
+        # Reattach every cargo continuously. In particular, 17 is now mounted
+        # on the left side of 18 before any colour operation starts.
+        pos_step1 = {"15": p_15_1, "9": p_9_1, "18": p_18_1, "17": p_17_1, "27": p_27_1}
+        edges_step1 = (("15", "9"), ("15", "18"), ("18", "17"), ("18", "27"))
+        for step in range(1, 35):
+            t = ease(step / 34.0)
+            cur_pos = {"15": p_15_1, "18": p_18_1}
+            cur_pos.update({key: lerp_point(detached[key], pos_step1[key], t) for key in detached})
+            frames.append(scene(
+                cur_pos, colors0, edges_step1,
+                edge_opacity={("15", "9"): t, ("18", "17"): t, ("18", "27"): t},
+            ))
+        frames.extend([scene(pos_step1, colors0, edges_step1)] * 18)
+
+        # First recolouring after the right rotation: 15 becomes black and 18 red.
+        first_colors = {"15": False, "9": False, "18": True, "17": False, "27": False}
+        for step in range(1, 25):
+            t = ease(step / 24.0)
+            frames.append(scene(
+                pos_step1, colors0, edges_step1,
+                color_transitions={"15": (True, False, t), "18": (False, True, t)},
+            ))
+        frames.extend([scene(pos_step1, first_colors, edges_step1)] * 18)
+
+        # Then 18 becomes black, and its two children 17 and 27 become red.
+        second_colors = {"15": False, "9": False, "18": False, "17": True, "27": True}
+        for step in range(1, 25):
+            t = ease(step / 24.0)
+            frames.append(scene(
+                pos_step1, first_colors, edges_step1,
+                color_transitions={
+                    "18": (True, False, t),
+                    "17": (False, True, t),
+                    "27": (False, True, t),
+                },
+            ))
+        frames.extend([scene(pos_step1, second_colors, edges_step1)] * 18)
+
+        # Delete the red 27. It disappears completely, with no ghost node.
+        for step in range(1, 25):
+            t = ease(step / 24.0)
+            frames.append(scene(
+                pos_step1, second_colors, edges_step1,
+                opacities={"27": 1.0 - t},
+                edge_opacity={("18", "27"): 1.0 - t},
+            ))
+        pos_final = {"15": p_15_1, "9": p_9_1, "18": p_18_1, "17": p_17_1}
+        edges_final = (("15", "9"), ("15", "18"), ("18", "17"))
+        final_colors = {"15": False, "9": False, "18": False, "17": True}
+        frames.extend([scene(pos_final, final_colors, edges_final)] * 45)
+        render_webm("rb-delete-case5-red-sibling", frames, fps=30, transparent=True)
+
+    cases = {
+        "case1": case1,
+        "case2": case2,
+        "case3": case3,
+        "case4": case4,
+        "case5": case5,
+    }
+    for name, build_case in cases.items():
+        if case_names is None or name in case_names:
+            build_case()
 
 
 def avl_balance_contrast_svg() -> str:
@@ -13859,6 +16754,10 @@ def write_static_assets() -> None:
         btree_order_5_svg(),
         encoding="utf-8",
     )
+    ASSETS.joinpath("btree-promotion-parity.svg").write_text(
+        btree_promotion_parity_svg(),
+        encoding="utf-8",
+    )
     ASSETS.joinpath("btree-delete-cases.svg").write_text(
         btree_delete_cases_svg(),
         encoding="utf-8",
@@ -13902,17 +16801,23 @@ def main() -> None:
     btree_classic_plain()
     btree_classic_lend()
     btree_classic_merge()
-    btree_case1_compare()
-    btree_case2_compare()
+    btree_case1_split()
+    btree_case2_split()
     btree_case3_compare()
     btree_delete_5()
+    rb_delete_case1_btree()
+    rb_delete_case2_btree()
+    rb_delete_case3_btree()
+    rb_delete_case5_btree()
     rb_encoding()
     rb_insert()
     rb_ll_rr()
     rb_lr_rl()
     rb_overflow()
     rb_color_flip()
-    rb_delete()
+    rb_delete_one_child()
+    rb_delete_zero_child()
+    rb_delete_cases()
 
 
 if __name__ == "__main__":
@@ -13927,8 +16832,26 @@ if __name__ == "__main__":
         and not name.startswith("_")
         and not inspect.signature(fn).parameters
     }
+    scenes["rb_delete_cases"] = rb_delete_cases
     if len(sys.argv) > 1:
         for name in sys.argv[1:]:
-            scenes[name]()
+            if name == "rb_delete_case1":
+                rb_delete_cases({"case1"})
+            elif name == "rb_delete_case2_btree":
+                rb_delete_case2_btree()
+            elif name == "rb_delete_case3_btree":
+                rb_delete_case3_btree()
+            elif name == "rb_delete_case5_btree":
+                rb_delete_case5_btree()
+            elif name == "rb_delete_case2":
+                rb_delete_cases({"case2"})
+            elif name == "rb_delete_case3":
+                rb_delete_cases({"case3"})
+            elif name == "rb_delete_case4":
+                rb_delete_cases({"case4"})
+            elif name == "rb_delete_case5":
+                rb_delete_cases({"case5"})
+            else:
+                scenes[name]()
     else:
         main()
