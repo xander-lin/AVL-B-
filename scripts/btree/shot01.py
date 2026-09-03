@@ -47,6 +47,7 @@ W_WHO_FIRST = (26.46, 28.20)       # 谁先来谁就是索引
 W_TILT = (29.24, 32.08)            # 脖子歪了，一步错步步错
 W_AVL = (33.32, 38.06)             # AVL 修补树的形状
 SHOT_CUT = 38.70                   # narration pause between the two shots
+FADE_TAIL = 1.5                    # end-of-shot fade-out gap before the next shot
 W_BTREE = (39.28, 41.72)           # 我们今天要学习的 B 树
 W_ELECT = (47.66, 49.82)           # 由各级动态推举产生
 
@@ -233,8 +234,6 @@ def draw_shot_intro(draw: ImageDraw.ImageDraw, t: float) -> None:
         avl.draw_text(draw, (960, 150), "索引质量 = 时间复杂度的关键", size=40, fill=avl.INK)
     elif W_WHO_FIRST[0] <= t < W_TILT[0]:
         avl.draw_text(draw, (960, 150), "索引位置：谁先来谁就是", size=40, fill=avl.INK)
-    elif W_TILT[0] + 0.4 <= t < W_AVL[0]:
-        avl.draw_text(draw, (960, 150), "脖子一歪，一步错，步步错", size=40, fill=avl.GLOW_RED)
     elif t >= 35.8:
         avl.draw_text(draw, (960, 150), "AVL：修补树的形状", size=40, fill=avl.INK)
 
@@ -243,13 +242,6 @@ def draw_shot_intro(draw: ImageDraw.ImageDraw, t: float) -> None:
         avl.draw_text(draw, (1350, 430), "退化", size=46, fill=avl.GLOW_RED, anchor="lm")
         if t >= W_WHY[0]:
             avl.draw_text(draw, (1350, 520), "为什么会这样？", size=32, fill=avl.INK, anchor="lm")
-
-    # comparison counter
-    if W_TILT[0] <= t < 33.32:
-        count = 1 + sum(1 for index in range(3) if t >= 29.6 + index * 0.9)
-        avl.draw_text(draw, (960, 950), f"比较 {count} 次", size=36, fill=avl.GLOW_RED)
-    elif 33.32 <= t < AVL_MOVE[0]:
-        avl.draw_text(draw, (960, 950), "比较 4 次", size=36, fill=avl.GLOW_RED)
 
     for key in ("40", "30", "20", "10"):
         highlight_root = key == "10" and W_ROOT_CLAIM[0] <= t < 13.0
@@ -340,10 +332,16 @@ def encode_native_source(output: Path, duration: float) -> None:
     """Pad the opaque source-code MP4 at 60 fps for the opening shot."""
     output.parent.mkdir(parents=True, exist_ok=True)
     temp_output = output.with_suffix(".tmp.mp4")
+    play = duration - FADE_TAIL
     subprocess.run(
         [
             "ffmpeg", "-y", "-loglevel", "error", "-i", str(ROOT / "assets" / "btree-insert-black.mp4"),
-            "-vf", f"fps=60,pad=1920:1080:166:0:color=black,trim=duration={duration:.6f},setpts=PTS-STARTPTS",
+            "-vf",
+            (
+                f"fps=60,pad=1920:1080:166:0:color=black,trim=duration={play:.6f},"
+                f"tpad=stop_mode=clone:stop_duration={FADE_TAIL:.6f},"
+                f"fade=t=out:st={play:.6f}:d={FADE_TAIL:.6f},setpts=PTS-STARTPTS"
+            ),
             "-an", "-c:v", "libx264", "-preset", "medium", "-crf", "0", "-pix_fmt", "yuv420p",
             "-color_range", "tv", "-r", "60", "-movflags", "+faststart", str(temp_output),
         ],
@@ -368,7 +366,7 @@ def mux_audio(video_only: Path, output: Path) -> None:
     subprocess.run(
         [
             "ffmpeg", "-y", "-loglevel", "error", "-i", str(video_only), "-i", str(AUDIO_PATH),
-            "-map", "0:v:0", "-map", "1:a:0", "-t", f"{TOTAL:.6f}", "-c:v", "copy",
+            "-map", "0:v:0", "-map", "1:a:0", "-t", f"{TOTAL + FADE_TAIL:.6f}", "-c:v", "copy",
             "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-movflags", "+faststart",
             str(output),
         ],
@@ -393,7 +391,7 @@ def main() -> None:
     custom = OUTPUT_DIR / "segments" / "shot01-intro-custom.mp4"
     native = OUTPUT_DIR / "segments" / "shot01-intro-native.mp4"
     encode_rendered(custom, SHOT_CUT, lambda when: draw_frame(when))
-    encode_native_source(native, TOTAL - SHOT_CUT)
+    encode_native_source(native, TOTAL - SHOT_CUT + FADE_TAIL)
     concat_video_parts([custom, native], segment)
     custom.unlink(missing_ok=True)
     native.unlink(missing_ok=True)

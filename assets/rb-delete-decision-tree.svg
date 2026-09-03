@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="943" height="251" viewBox="0 0 943 251">
+  <!-- root spine anchoring the first brace -->
+  <line x1="3.2" y1="37.5" x2="3.2" y2="125.5" stroke="#38BDF8" stroke-width="3" stroke-linecap="round"/>
+  <!-- braces -->
+  <g stroke="#38BDF8" stroke-width="3" stroke-linecap="round" fill="none">
+    <path d="M 41 37.5 C 31.5 37.5, 27.5 39, 27.5 44 L 27.5 119 C 27.5 124, 31.5 125.5, 41 125.5"/>
+    <line x1="14.5" y1="81.5" x2="28" y2="81.5" stroke-width="3.4"/>
+    <path d="M 166 79 C 157 79, 153 80.5, 153 85.5 L 153 172 C 153 176.5, 157 177.5, 166 177.5"/>
+    <line x1="137" y1="128.5" x2="153.5" y2="128.5" stroke-width="3.4"/>
+    <path d="M 282 137.5 C 273 137.5, 269.5 139, 269.5 144 L 269.5 215 C 269.5 219.5, 273 220.5, 283 220.5"/>
+    <line x1="251" y1="179" x2="270" y2="179" stroke-width="3.4"/>
+    <path d="M 434 105.5 C 425 105.5, 420.5 107, 420.5 112 L 420.5 182 C 420.5 186.5, 425 187.5, 432 187.5"/>
+    <line x1="404" y1="146.5" x2="421" y2="146.5" stroke-width="3.4"/>
+  </g>
+  <!-- text -->
+  <g fill="#F8FAFC" font-family="Noto Sans CJK SC, PingFang SC, Microsoft YaHei, sans-serif">
+    <g font-size="20.5" font-weight="500">
+      <text x="51" y="47">只有左孩子/只有右孩子：代替后变黑</text>
+      <text x="178" y="84" fill="#F87171">红结点：删除后无需任何调整</text>
+      <text x="52" y="131">没有孩子</text>
+      <text x="443" y="118">兄弟至少有一个红孩子: (LL,RR,LR,RL)变色+旋转</text>
+      <text x="295" y="153">兄弟是黑色</text>
+      <text x="179" y="188">黑结点</text>
+      <text x="446" y="193">兄弟的孩子都是黑色：兄弟变红，双黑上移</text>
+      <text x="295" y="232">兄弟是红色：兄父变色，朝双黑旋转</text>
+    </g>
+    <g font-size="12.5" font-weight="400" fill="#94A3B8">
+      <text x="822" y="138.5" text-anchor="end">（双黑变单黑）</text>
+      <text x="170" y="209.5">（删除后变双黑）</text>
+      <text x="829" y="216.5" text-anchor="end">（遇红或根变单黑）</text>
+    </g>
+  </g>
+</svg>

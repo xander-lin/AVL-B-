@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1720" height="560" viewBox="0 0 1720 560">
+  <style>
+    text{font-family:"Noto Sans CJK SC",system-ui,sans-serif;fill:#F8FAFC;text-anchor:middle;dominant-baseline:middle}
+  </style>
+  <text x="860" y="56" font-size="40" font-weight="600">编程时插入的规则</text>
+  <text x="560" y="300" font-size="36" font-weight="600" style="text-anchor:end">违反不红红</text>
+  <text x="560" y="350" font-size="26" fill="#8A8A8A" style="text-anchor:end">（有叔叔结点）</text>
+  <path d="M 655 178
+           C 626 196 620 240 620 308
+           C 620 320 612 327 596 330
+           C 612 333 620 340 620 352
+           C 620 420 626 464 655 482"
+        stroke="#F8FAFC" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <rect x="720" y="205" width="240" height="70" rx="14" fill="#DC2626" opacity="0.18"/>
+  <rect x="720" y="205" width="240" height="70" rx="14" fill="none" stroke="#F87171" stroke-width="2"/>
+  <text x="840" y="241" font-size="30" fill="#F87171">叔叔是红色</text>
+  <path d="M 972 240 L 1006 240" stroke="#F8FAFC" stroke-width="3"/>
+  <path d="M 1000 233 L 1012 240 L 1000 247" stroke="#F8FAFC" stroke-width="3" fill="none"/>
+  <text x="1028" y="241" font-size="30" style="text-anchor:start">叔父爷变色，以爷节点的位置继续向上判断</text>
+  <rect x="720" y="385" width="240" height="70" rx="14" fill="#111827" stroke="#64748B" stroke-width="2"/>
+  <text x="840" y="421" font-size="30">叔叔是黑色</text>
+  <path d="M 972 420 L 1006 420" stroke="#F8FAFC" stroke-width="3"/>
+  <path d="M 1000 413 L 1012 420 L 1000 427" stroke="#F8FAFC" stroke-width="3" fill="none"/>
+  <text x="1028" y="421" font-size="30" style="text-anchor:start">旋转（LL、RR、LR、RL），然后变色</text>
+</svg>

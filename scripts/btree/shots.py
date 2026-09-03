@@ -192,10 +192,15 @@ def draw_definition(image: Image.Image, t: float) -> None:
     draw_definition_panel(ImageDraw.Draw(image))
 
 
+ORDER4_TITLE_AT = 9.8  # “四阶B树的节点” spoken (recording 35)
+
+
 def draw_order4(image: Image.Image, t: float) -> None:
     lower_source(image, "btree-order-4.svg", t)
     draw = ImageDraw.Draw(image)
     draw_definition_panel(draw)
+    if t >= ORDER4_TITLE_AT:
+        text(draw, "4阶B树的节点", (640, 420), size=46)
 
 
 def draw_order5(image: Image.Image, t: float) -> None:

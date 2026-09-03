@@ -82,18 +82,54 @@ python3 scripts/rb/shot17.py
 
 ## B-tree deletion course shots
 
-`btree/deletion_shots.py` renders the newly recorded deletion chapter one
-shot at a time. Its outputs are intentionally separate from the completed
-pre-deletion and post-deletion B-tree sections under `outputs/btree-video/`.
+`btree/deletion_shots.py` renders the deletion chapter one shot at a time from
+the original manuscript media. Recordings with no media tag inherit the
+previous media frame; they do not create text-only shots. VP9 source videos
+are decoded into PNG frame sequences first, then composited onto black and
+encoded as ordinary `yuv420p` H.264 MP4. Each operation video holds its source
+first frame until the narration reaches the corresponding deletion key.
+Its outputs are intentionally separate from the completed pre-deletion and
+post-deletion B-tree sections under `outputs/btree-video/`.
 
 ```sh
 python3 scripts/btree/deletion_shots.py --shot 1
 ```
 
-The first shot uses the new recording `3` to introduce the traditional
-deletion branches and the separate `首领回家` semantic path. Use preview mode
-before encoding a new shot:
+The first shot uses recordings `3+9` while keeping the original
+`btree-delete-cases.svg` on screen. All deletion outputs are rebuilt with the
+same media-only and black-background pipeline.
 
-```sh
-python3 scripts/btree/deletion_shots.py --shot 1 --preview --at 1,8,12,16,19
-```
+`btree/case_frames.py` regenerates the case one/two traditional animations
+without their burned-in sentence captions. It calls the original generators
+with `captions=None` and writes caption-free variants to
+`outputs/btree-prep/case-nocaption/`; the original `assets/*.webm` files stay
+untouched. It also emits uncropped parallel-grid variants whose panel slots
+have exact positions. Deletion shots 2 and 3 use these variants: each video
+segment is overlaid only inside its own narration window so a following
+transparent segment can never reveal the previous one, and grid panels are
+cropped per slot and repacked as a centered group. Every visual is scaled
+into a central content box (`1536x756`) so no画面 sits flush against the
+frame edges, except full-frame 1920x1080 sources such as
+`btree-delete-5-slow.webm`, which play at native size. Recording `23` opens
+shot 4 (case three traditional) instead of closing shot 3. Shots 4, 5, 8 and
+9 are narration-paced: each source animation phase (mapped through the
+generator's caption table plus word-level ASR anchors) stretches across the
+narration window that describes it, and stable states are held during
+discussions and pauses. Paced positioning uses fractional progress through
+the decoded frames because `btree-delete-5-slow.webm` stretches timestamps
+without changing its frame count. Shot 5 extends its final segment to the
+grid's full length so the right (80回家) take finishes, and draws a thin
+shadow over that take once "50回家了" has been spoken.
+
+`btree/concat_deletion.py` concatenates the deletion chapter
+(`outputs/btree-delete-video/shot00-delete-title.mp4`, playing recording 59
+over the centered "删除" title card, then `shot01-*.mp4` ... `shot09-*.mp4`)
+into `deletion.mp4`, then joins `before-deletion.mp4` + `deletion.mp4` +
+`after-deletion.mp4` into the complete `outputs/btree-video/btree-full.mp4`,
+merging the sidecar subtitle tracks with shifted timestamps. Multi-panel grid
+shots (shot 2 Case 1 in a 2+1 grid and shot 3 Case 2 in 1 row) crop each panel
+to its content bounding box and repack the group centered with large scales.
+Recording 33 opens shot 7 (5-order B-tree example intro holding the full tree)
+while recording 31 pairs with shot 6 (`btree-promotion-parity.svg`).
+The intro shot ends with a 1.5s fade-out tail, and the order-4 illustration
+shot shows a "4阶B树的节点" label when the narration names it.

@@ -54,6 +54,58 @@ def stamp(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{whole:02d},{millis:03d}"
 
 
+SENTENCE_ENDERS = "。！？；…!?;"
+CLAUSE_BREAKS = "，、,:： "
+
+
+def split_long_text(text: str, limit: int = 24) -> list[str]:
+    """Re-segment a subtitle line into short cues without changing any wording."""
+    text = text.replace("\n", "")
+    sentences: list[str] = []
+    buffer = ""
+    for char in text:
+        buffer += char
+        if char in SENTENCE_ENDERS:
+            sentences.append(buffer)
+            buffer = ""
+    if buffer.strip():
+        sentences.append(buffer)
+
+    pieces: list[str] = []
+    for sentence in sentences:
+        if len(sentence) <= limit:
+            pieces.append(sentence)
+            continue
+        clauses: list[str] = []
+        buffer = ""
+        for char in sentence:
+            buffer += char
+            if char in CLAUSE_BREAKS and len(buffer) >= limit // 2:
+                clauses.append(buffer)
+                buffer = ""
+        if buffer.strip():
+            clauses.append(buffer)
+        merged: list[str] = []
+        buffer = ""
+        for clause in clauses:
+            if buffer and len(buffer) + len(clause) > limit:
+                merged.append(buffer)
+                buffer = clause
+            else:
+                buffer += clause
+        if buffer.strip():
+            merged.append(buffer)
+        for chunk in merged:
+            while len(chunk) > limit:
+                cut = chunk.rfind("，", 0, limit + 1)
+                if cut <= 0:
+                    cut = limit
+                pieces.append(chunk[: cut + 1])
+                chunk = chunk[cut + 1 :]
+            pieces.append(chunk)
+    return [piece for piece in pieces if piece.strip()]
+
+
 def shifted_srt(path: Path, offset: float, number_start: int) -> tuple[list[str], int]:
     blocks = [block.strip() for block in path.read_text(encoding="utf-8").split("\n\n") if block.strip()]
     entries: list[str] = []
@@ -69,8 +121,19 @@ def shifted_srt(path: Path, offset: float, number_start: int) -> tuple[list[str]
         end = parse_stamp(match.group("end")) + offset
         text_index = lines.index(timing) + 1
         text = "\n".join(lines[text_index:])
-        entries.append(f"{number}\n{stamp(start)} --> {stamp(end)}\n{text}\n")
-        number += 1
+        pieces = split_long_text(text)
+        if len(pieces) <= 1:
+            entries.append(f"{number}\n{stamp(start)} --> {stamp(end)}\n{text}\n")
+            number += 1
+            continue
+        weights = [len(piece) for piece in pieces]
+        total = sum(weights)
+        cursor = start
+        for index, piece in enumerate(pieces):
+            piece_end = end if index == len(pieces) - 1 else cursor + (end - start) * weights[index] / total
+            entries.append(f"{number}\n{stamp(cursor)} --> {stamp(piece_end)}\n{piece}\n")
+            number += 1
+            cursor = piece_end
     return entries, number
 
 

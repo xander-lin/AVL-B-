@@ -6285,36 +6285,26 @@ def rb_delete_case3_btree() -> None:
         ))
     frames.extend([scene(merge, colors_conflict, merge_edges)] * 18)
 
-    # The merged three-key group settles into its red-black encoding.
-    for step in range(1, 25):
-        t = ease(step / 24.0)
-        frames.append(scene(
-            merge,
-            colors_merged,
-            merge_edges,
-            transitions={
-                key: (colors_conflict[key], colors_merged[key], t)
-                for key in ("15", "18")
-            },
-        ))
-    frames.extend([scene(merge, colors_merged, merge_edges)] * 18)
-
-    # 15 is red now, so 17 belongs to 15's side: its relation moves from
-    # 18 to 15 before any promotion happens.
+    # 15 becoming red and taking 17 are one state change. Move 17 while the
+    # recolouring plays so it is already attached to 15 when the colour settles.
     settled = dict(merge)
     settled["17"] = (740.0, 505.0)
     settled_edges = (
         ("15", "18"), ("18", "27"), ("8", "6"),
         ("15", "8"), ("15", "17"), ("27", "25"), ("27", "34"),
     )
-    for step in range(1, 31):
-        t = ease(step / 30.0)
+    for step in range(1, 25):
+        t = ease(step / 24.0)
         positions = dict(merge)
         positions["17"] = lerp_point(merge["17"], settled["17"], t)
         frames.append(scene(
             positions,
             colors_merged,
-            merge_edges if step <= 15 else settled_edges,
+            settled_edges,
+            transitions={
+                key: (colors_conflict[key], colors_merged[key], t)
+                for key in ("15", "18")
+            },
         ))
     frames.extend([scene(settled, colors_merged, settled_edges)] * 18)
 
@@ -6506,11 +6496,23 @@ def rb_delete_case4_btree() -> None:
         opacities: Mapping[str, float] | None = None,
         edge_opacities: Mapping[tuple[str, str], float] | None = None,
         transitions: Mapping[str, tuple[bool, bool, float]] | None = None,
+        vacant: tuple[Point, float] | None = None,
     ) -> str:
         opacities = opacities or {}
         edge_opacities = edge_opacities or {}
         transitions = transitions or {}
-        body = "".join(
+        body = ""
+        if vacant is not None:
+            point, opacity = vacant
+            if opacity > 0.0:
+                x, y = point
+                body += (
+                    f'<rect x="{x - RB_NODE_W / 2:.1f}" y="{y - RB_NODE_H / 2:.1f}" '
+                    f'width="{RB_NODE_W:.1f}" height="{RB_NODE_H:.1f}" rx="9" fill="none" '
+                    f'stroke="{RB_BLACK_INK}" stroke-width="2.4" stroke-dasharray="7 5" '
+                    f'opacity="{opacity:.3f}"/>'
+                )
+        body += "".join(
             rb_edge_fragment(
                 positions[parent],
                 positions[child],
@@ -6531,65 +6533,67 @@ def rb_delete_case4_btree() -> None:
                 body += rb_node(point, key, opacity * blend, red=after)
         return svg(body, width=width, height=height, color=INK)
 
+    # Start directly in the B-tree member arrangement: [10, 25] is the
+    # upper member row, with 4, 17, and 28 as its three child ranges.
     initial = {
-        "10": (682.0, 130.0),
-        "4": (380.0, 390.0),
-        "25": (984.0, 390.0),
-        "17": (850.0, 680.0),
-        "28": (1110.0, 680.0),
-    }
-    folded = {
         "10": (570.0, 140.0),
         "25": (750.0, 140.0),
         "4": (350.0, 450.0),
         "17": (700.0, 450.0),
         "28": (1000.0, 450.0),
     }
+    # 25 returns home between 17 and 28. Nothing else moves and no edge is
+    # ever added: the four existing edges simply follow their endpoints.
+    home = dict(initial)
+    home["25"] = (850.0, 450.0)
     initial_colors = {"10": False, "4": False, "25": True, "17": False, "28": False}
-    member_colors = {"10": False, "4": False, "25": False, "17": True, "28": True}
-    initial_edges = (("10", "4"), ("10", "25"), ("25", "17"), ("25", "28"))
-    folded_edges = initial_edges
-    frames: list[str] = [scene(initial, initial_colors, initial_edges)] * 30
+    home_colors = {"10": False, "4": False, "25": False, "17": True, "28": True}
+    member_edges = (("10", "4"), ("10", "25"), ("25", "17"), ("25", "28"))
+    frames: list[str] = [scene(initial, initial_colors, member_edges)] * 30
 
-    # Fold the red 25 into the root's member row; no repair rotation occurs.
-    for step in range(1, 43):
-        t = ease(step / 42.0)
+    # Press 25 back home. It keeps its red colour throughout the move; its
+    # former upper slot becomes a dashed vacancy.
+    for step in range(1, 49):
+        t = ease(step / 48.0)
         frames.append(scene(
-            {key: lerp_point(initial[key], folded[key], t) for key in initial},
+            {key: lerp_point(initial[key], home[key], t) for key in initial},
             initial_colors,
-            folded_edges,
+            member_edges,
+            vacant=(initial["25"], t),
         ))
-    frames.extend([scene(folded, initial_colors, folded_edges)] * 24)
+    frames.extend([scene(home, initial_colors, member_edges, vacant=(initial["25"], 1.0))] * 18)
 
-    # Recolour the member row in place: 25 becomes black while 17 and 28
-    # become red. There is no second downward move in this case.
+    # Only after 25 reaches its home does the recolouring occur: 25 becomes
+    # black while 17 and 28 become red.
     for step in range(1, 25):
         t = ease(step / 24.0)
         frames.append(scene(
-            folded,
-            member_colors,
-            folded_edges,
+            home,
+            home_colors,
+            member_edges,
             transitions={
-                key: (initial_colors[key], member_colors[key], t)
+                key: (initial_colors[key], home_colors[key], t)
                 for key in ("25", "17", "28")
             },
+            vacant=(initial["25"], 1.0),
         ))
-    frames.extend([scene(folded, member_colors, folded_edges)] * 24)
+    frames.extend([scene(home, home_colors, member_edges, vacant=(initial["25"], 1.0))] * 18)
 
-    # Delete the red 28 in place; it leaves no ghost or rotation artifact.
+    # The now-red 28 is deleted last; the vacancy marker fades away with it.
     for step in range(1, 25):
         t = ease(step / 24.0)
         frames.append(scene(
-            folded,
-            member_colors,
-            folded_edges,
+            home,
+            home_colors,
+            member_edges,
             opacities={"28": 1.0 - t},
             edge_opacities={("25", "28"): 1.0 - t},
+            vacant=(initial["25"], 1.0 - t),
         ))
-    remaining = {key: point for key, point in folded.items() if key != "28"}
-    remaining_colors = {key: value for key, value in member_colors.items() if key != "28"}
-    remaining_edges = tuple(edge for edge in folded_edges if "28" not in edge)
-    frames.extend([scene(remaining, remaining_colors, remaining_edges)] * 90)
+    final = {key: point for key, point in home.items() if key != "28"}
+    final_colors = {key: value for key, value in home_colors.items() if key != "28"}
+    final_edges = tuple(edge for edge in member_edges if "28" not in edge)
+    frames.extend([scene(final, final_colors, final_edges)] * 90)
     render_webm("rb-delete-case4-btree", frames, fps=30, transparent=True, crop_pad=24)
 
 
@@ -11303,12 +11307,15 @@ def _btree_case3_frames_semantic(
     first_merge = (220.0, 510.0)
     second_merge = (880.0, 510.0)
     parent_merge = (300.0, 285.0)
-    final_root = (550.0, 125.0)
+    # Root contraction lowers the old root leader to the current internal
+    # layer. The existing right internal node and all leaf groups stay on
+    # their respective layers.
+    final_root = (550.0, 285.0)
     final_leaves = (
-        (170.0, 380.0),
-        (400.0, 380.0),
-        (700.0, 380.0),
-        (930.0, 380.0),
+        (170.0, 510.0),
+        (400.0, 510.0),
+        (700.0, 510.0),
+        (930.0, 510.0),
     )
     Row = tuple[tuple[str | None, ...], tuple[Point, ...], str | None]
 
@@ -11747,11 +11754,9 @@ def _btree_case3_frames_semantic(
         left_after_delete = row(("20", "30"), positions=left_trio[1:])
         frames.extend([draw({**merged_state, "left_merged": left_after_delete}, merged_links, "删除 10，左侧叶组变为 [20,30]", ghosts=("left_slot",))] * 18)
 
-        # The remaining empty slot is on the left (at the left child position left_slot).
-        # In this panel, root [50] (on left) and [80,100] (on right) along with left_slot
-        # pull each other together towards the center to form [50,80,100].
-        # The link is between the left root [50] and the right child [80,100] pulling each other,
-        # while left_slot at the left side moves towards the final root position as well.
+        # 50 keeps its two current children throughout the contraction: the
+        # vacant red left slot and the [80,100] right child. The vacancy has
+        # no child edge to [20,30].
         final_root_slots = cell_slots(final_root, 3)
         final_children = (
             left_after_delete,
@@ -11772,13 +11777,12 @@ def _btree_case3_frames_semantic(
             }
             for index, (source, target) in enumerate(zip(final_children, final_child_targets)):
                 moving[f"child{index}"] = move(source, target, progress)
-            # 50 on the left is connected to [80,100] on the right (pulling together)
-            # and each node connects down to its respective children.
-            # 80 connects to child1 ([55,60]), 100 connects to child2 (90) and child3 (110).
+            # The red slot is 50's left child; [80,100] is its right child.
+            # The vacant slot deliberately has no edge to [20,30].
             moving_parent = row(("80", "100"), positions=(moving["moving80"][1][0], moving["moving100"][1][0]))
             moving["moving_parent"] = moving_parent
             contraction_links = (
-                ("moving50", "child0", 0),
+                ("moving50", "left_slot", 0),
                 ("moving50", "moving_parent", 1),
                 ("moving_parent", "child1", 0), ("moving_parent", "child2", 1), ("moving_parent", "child3", 2),
             )
@@ -14535,6 +14539,8 @@ def rb_insert() -> None:
     tree["B1L"] = N((36, 37), "br")
     tree["B1R"] = N((39,), "b")
     S["s4e"] = tree
+    S["s4e_mid"] = dict(tree)
+    S["s4e_mid"]["RT"] = N((49,), "r", ("RL", "RR"))
     tree = base_tree()
     tree["A1"] = N((21, 22, 23), "rbr")
     tree["C0"] = N((50, 51, 52, 54), "rrbr")
@@ -15144,10 +15150,14 @@ def rb_insert() -> None:
     )
     hold_semantic(S["s4e_pre"], E4, 18, grown=True, caption_text=cap4d)
     recolor_semantic(
-        S["s4e_pre"], S["s4e"], E4, 20,
+        S["s4e_pre"], S["s4e_mid"], E4, 20,
         grown=True, caption_text=cap4d_color,
     )
-    hold_semantic(S["s4e"], E4, 96, grown=True, caption_text=cap4d_color)
+    recolor_semantic(
+        S["s4e_mid"], S["s4e"], E4, 18,
+        grown=True, caption_text=cap4d_color,
+    )
+    hold_semantic(S["s4e"], E4, 78, grown=True, caption_text=cap4d_color)
 
     st5 = ("C0", 51)
     fold_50_lanes = {frozenset((51, 50)): -8.0}
@@ -15990,17 +16000,11 @@ def rb_delete_cases(case_names: set[str] | None = None) -> None:
         edges_del = (("10", "4"), ("10", "25"), ("25", "17"))
         frames.extend([scene(pos_del, colors_del, edges_del)] * 20)
 
-        # Recolor: 25 turns black; 17 is already red from the pre-delete step.
-        for step in range(1, 30):
-            t = ease(step / 29.0)
-            frames.append(scene(
-                pos_del, colors_del, edges_del,
-                color_transitions={
-                    "25": (True, False, t),
-                },
-            ))
+        # 25 was already black when it returned home; after deleting red 28,
+        # this is the final legal state.  Do not recolor it again.
         colors_final = {"10": False, "4": False, "25": False, "17": True}
-        frames.extend([scene(pos_del, colors_final, edges_del)] * 45)
+        # Preserve the original timeline length with a stable final hold.
+        frames.extend([scene(pos_del, colors_final, edges_del)] * 74)
         render_webm("rb-delete-case4-red-parent", frames, fps=30, transparent=True)
 
     # -------------------------------------------------------------
@@ -16809,6 +16813,7 @@ def main() -> None:
     rb_delete_case1_btree()
     rb_delete_case2_btree()
     rb_delete_case3_btree()
+    rb_delete_case4_btree()
     rb_delete_case5_btree()
     rb_encoding()
     rb_insert()
@@ -16842,6 +16847,8 @@ if __name__ == "__main__":
                 rb_delete_case2_btree()
             elif name == "rb_delete_case3_btree":
                 rb_delete_case3_btree()
+            elif name == "rb_delete_case4_btree":
+                rb_delete_case4_btree()
             elif name == "rb_delete_case5_btree":
                 rb_delete_case5_btree()
             elif name == "rb_delete_case2":
