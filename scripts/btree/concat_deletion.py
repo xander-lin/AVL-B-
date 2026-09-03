@@ -68,6 +68,7 @@ def main() -> None:
         (BTREE_VIDEO / "before-deletion.mp4", BTREE_VIDEO / "before-deletion.srt"),
         (DELETION_FILM, DELETION_FILM.with_suffix(".srt")),
         (BTREE_VIDEO / "after-deletion.mp4", BTREE_VIDEO / "after-deletion.srt"),
+        (BTREE_VIDEO / "ending.mp4", BTREE_VIDEO / "ending.srt"),
     ]
     missing = [path for path, _ in full if not path.exists()]
     if missing:

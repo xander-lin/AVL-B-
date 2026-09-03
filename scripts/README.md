@@ -121,6 +121,11 @@ without changing its frame count. Shot 5 extends its final segment to the
 grid's full length so the right (80回家) take finishes, and draws a thin
 shadow over that take once "50回家了" has been spoken.
 
+`btree/ending_shot.py` renders the static course-ending shot: the open-source
+repository address, two repository screenshots (`assets/repo-intro-*.png`),
+a remake invitation, and the MIT license line. It is silent by design and is
+appended as the final segment of `btree-full.mp4`.
+
 `btree/concat_deletion.py` concatenates the deletion chapter
 (`outputs/btree-delete-video/shot00-delete-title.mp4`, playing recording 59
 over the centered "删除" title card, then `shot01-*.mp4` ... `shot09-*.mp4`)
